@@ -47,8 +47,13 @@ STOCK_DB = {
     # أمريكا
     "apple أبل": "AAPL",
     "tesla تسلا": "TSLA",
+    "microsoft مايكروسوفت": "MSFT",
+    "google جوجل": "GOOGL",
+    "amazon أمازون": "AMZN",
+    "meta فيسبوك": "META",
     "nvidia إنفيديا": "NVDA",
-    "google جوجل": "GOOGL"
+    "gold ذهب": "GC=F", 
+    "bitcoin بيتكوين": "BTC-USD" 
 }
 
 
@@ -76,58 +81,57 @@ def find_ticker_smart(user_text):
 # ---------------------------------------------------------
 def smart_router(user_input):
     client = Groq(api_key=API_KEY)
-
-    # 1. البحث في القاموس أولاً (Database Check)
+    
+    # 1. البحث في القاموس أولاً
     ticker, name = find_ticker_smart(user_input)
-
-    # لو ملقيناهوش في القاموس، نسأل الذكاء الاصطناعي
-    if not ticker:
-        system_prompt = """
-        استخرج رمز السهم (Ticker) واسم الشركة من الجملة.
-        - الأسهم المصرية يجب أن تنتهي بـ .CA (مثال: COMI.CA)
-        - الأسهم السعودية بـ .SR
-        الرد JSON فقط: {"action": "analyze", "ticker": "...", "search_term": "..."}
-        لو دردشة عادية: {"action": "chat", "reply": "..."}
-        """
-        try:
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_input}
-                ],
-                temperature=0,
-                response_format={"type": "json_object"}
-            )
-            decision = json.loads(completion.choices[0].message.content)
-        except:
-            return {"action": "error", "reply": "حدث خطأ في الاتصال"}
-    else:
-        # لو لقيناه في القاموس، نجهز الرد بنفس شكل الموديل
-        decision = {
+    if ticker:
+        return {
             "action": "analyze",
             "ticker": ticker,
-            "search_term": name
+            "search_term": name,
+            "source": "database"
         }
+    
+    # 2. لو مش في القاموس، الموديل يحدد الجنسية
+    system_prompt = """
+    أنت خبير أسواق مالية. استخرج رمز السهم (Yahoo Finance Ticker) واسم الشركة بدقة.
+    
+    القواعد الصارمة للرموز:
+    1. الأسهم المصرية (Egypt): يجب إضافة ".CA" في النهاية (مثال: COMI.CA).
+    2. الأسهم السعودية (Saudi): يجب إضافة ".SR" في النهاية (مثال: 2222.SR).
+    3. الأسهم الأمريكية (US): بدون لاحقة (مثال: AAPL, TSLA, NVDA).
+    4. العملات الرقمية: تنتهي بـ "-USD" (مثال: BTC-USD).
+    
+    الرد JSON فقط:
+    {
+        "action": "analyze",
+        "ticker": "الرمز الصحيح باللاحقة",
+        "search_term": "اسم الشركة بالعربي"
+    }
+    
+    لو الكلام دردشة عادية: {"action": "chat", "reply": "..."}
+    """
+    
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ],
+            temperature=0,
+            response_format={"type": "json_object"}
+        )
+        
+        decision = json.loads(completion.choices[0].message.content)
+        
+        # 3. (تعديل هام) شيلنا الـ Auto-Fixer اللي كان بيجبر السهم يبقى مصري
+        # وهنسيب الموديل هو اللي يقرر بناءً على الـ System Prompt القوي اللي فوق
+        
+        return decision
 
-    # ---------------------------------------------------------
-    # 🔧 التعديل السحري (Auto-Fixer):
-    # ده الجزء اللي هيصلح الشارت لو الرمز بايظ
-    # ---------------------------------------------------------
-    if decision.get("action") == "analyze":
-        raw_ticker = decision.get("ticker", "").upper().strip()
-
-        # لو الرمز مفيهوش نقطة (زي COMI بس)، هنعتبره مصري ونضيفله .CA
-        if raw_ticker and "." not in raw_ticker:
-            # لو هو أرقام بس (زي 2222) غالباً سعودي
-            if raw_ticker.isdigit():
-                decision["ticker"] = f"{raw_ticker}.SR"
-            # لو حروف (زي ESRS) غالباً مصري
-            else:
-                decision["ticker"] = f"{raw_ticker}.CA"
-
-    return decision
-
+    except Exception as e:
+        return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
 # ---------------------------------------------------------
 # باقي الوظائف (الأخبار والشارت) - زي ما هي
@@ -215,4 +219,5 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
 
         elif decision.get("action") == "chat":
             st.markdown(decision["reply"])
+
             st.session_state.messages.append({"role": "assistant", "content": decision["reply"]})
