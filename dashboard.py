@@ -164,7 +164,7 @@ def analyze_stock_news(news_text, stock_name):
     completion = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role": "system", "content": "لخص وضع السهم (إيجابي/سلبي) في 10 نقاط."},
+            {"role": "system", "content": "لخص وضع السهم (إيجابي/سلبي) في 10 نقاط وانصح في الاخر بنسبة المخاطرة و هل احط فيها حاجة ولا لا."},
             {"role": "user", "content": f"السهم: {stock_name}\n\nالأخبار:\n{news_text}"}
         ]
     )
@@ -233,5 +233,6 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
             st.markdown(decision["reply"])
 
             st.session_state.messages.append({"role": "assistant", "content": decision["reply"]})
+
 
 
