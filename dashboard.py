@@ -62,7 +62,7 @@ def display_rtl(text):
     """
     st.markdown(
         f"""
-        <div style="direction: rtl; text-align: right; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-right: 5px solid #ff4b4b;">
+        <div style="direction: rtl; text-align: right; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #101114; padding: 20px; border-radius: 10px; border-right: 5px solid #ff4b4b;">
             {text.replace(chr(10), '<br>')}
         </div>
         """,
@@ -224,7 +224,7 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
                 news = get_market_news(name)
                 if news:
                     analysis = analyze_stock_news(news, name)
-                    st.markdown("### تسلم الايادي:")
+                    st.markdown("### اتفضل:")
                     display_rtl(analysis)
                 else:
                     st.error("مفيش أخبار. اكتب حاجة عدلة")
@@ -233,4 +233,5 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
             st.markdown(decision["reply"])
 
             st.session_state.messages.append({"role": "assistant", "content": decision["reply"]})
+
 
