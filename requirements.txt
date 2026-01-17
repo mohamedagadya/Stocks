@@ -1,0 +1,8 @@
+streamlit
+beautifulsoup4
+requests
+yfinance
+groq
+thefuzz
+lxml
+plotly
