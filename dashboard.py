@@ -4,26 +4,20 @@ from bs4 import BeautifulSoup
 from groq import Groq
 import yfinance as yf
 import json
-from thefuzz import process  # دي المكتبة الجديدة
+from thefuzz import process  
+
 
 # ---------------------------------------------------------
-# إعدادات الصفحة
-# ---------------------------------------------------------
 st.set_page_config(page_title="LAVa", page_icon="😘", layout="wide")
-# بدل ما نكتب المفتاح في الكود، بنقوله هاته من الخزنة السرية للسيرفر
 try:
     API_KEY = st.secrets["GROQ_API_KEY"]
 except:
-    # السطر ده عشان لو شغال على جهازك وما لقلش المفتاح
     st.warning("مطلوب مفتاح API للعمل")
     st.stop()
 
-# ---------------------------------------------------------
-# 1. قاعدة بيانات الأسهم (دليل التليفونات) 📒
-# ---------------------------------------------------------
-# ضيف هنا أي سهم انت عاوزه عشان يتعرف عليه بسرعة ودقة
+# Data base
 STOCK_DB = {
-    # مصر
+    # Egypt
     "البنك التجاري الدولي cib": "COMI.CA",
     "فوري fawry": "FWRY.CA",
     "حديد عز ezz steel": "ESRS.CA",
@@ -37,14 +31,14 @@ STOCK_DB = {
     "أبو قير للأسمدة": "ABUK.CA",
     "سيدي كرير للبتروكيماويات sidpec": "SKPC.CA",
 
-    # السعودية
+    # Suadi Arabia
     "أرامكو aramco": "2222.SR",
     "مصرف الراجحي al rajhi": "1120.SR",
     "سابك sabic": "2010.SR",
     "الأهلي السعودي snb": "1180.SR",
     "الكهرباء السعودية": "5110.SR",
 
-    # أمريكا
+    # USA
     "apple أبل": "AAPL",
     "tesla تسلا": "TSLA",
     "microsoft مايكروسوفت": "MSFT",
@@ -69,8 +63,7 @@ def display_rtl(text):
         unsafe_allow_html=True
     )
 # ---------------------------------------------------------
-# 2. وظيفة البحث الذكي (Fuzzy Search) 🕵️‍♂️
-# ---------------------------------------------------------
+# (Fuzzy Search) 
 def find_ticker_smart(user_text):
     """
     بيدور في القاموس بتاعنا على أقرب كلمة للي المستخدم كتبه
@@ -88,8 +81,7 @@ def find_ticker_smart(user_text):
 
 
 # ---------------------------------------------------------
-# 3. العقل المدبر (Router)
-# ---------------------------------------------------------
+#(Router)
 def smart_router(user_input):
     client = Groq(api_key=API_KEY)
     
@@ -103,7 +95,6 @@ def smart_router(user_input):
             "source": "database"
         }
     
-    # 2. لو مش في القاموس، الموديل يحدد الجنسية
     system_prompt = """
     أنت خبير أسواق مالية. استخرج رمز السهم (Yahoo Finance Ticker) واسم الشركة بدقة.
     
@@ -135,18 +126,13 @@ def smart_router(user_input):
         )
         
         decision = json.loads(completion.choices[0].message.content)
-        
-        # 3. (تعديل هام) شيلنا الـ Auto-Fixer اللي كان بيجبر السهم يبقى مصري
-        # وهنسيب الموديل هو اللي يقرر بناءً على الـ System Prompt القوي اللي فوق
-        
+       
         return decision
 
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
-# ---------------------------------------------------------
-# باقي الوظائف (الأخبار والشارت) - زي ما هي
-# ---------------------------------------------------------
+
 def get_market_news(query):
     url = f"https://news.google.com/rss/search?q={query}&hl=ar&gl=EG&ceid=EG:ar"
     try:
@@ -180,9 +166,7 @@ def get_stock_chart(ticker):
         return None
 
 
-# ---------------------------------------------------------
-# الواجهة
-# ---------------------------------------------------------
+# Interface
 st.title("تسلم الايادي(الزنجار الاصلي مابيخونش)")
 st.caption("اكتب يا باشا السهم و هقولك تعمل ايه")
 
@@ -199,12 +183,11 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
 
     with st.chat_message("assistant"):
         with st.spinner('زوجونا'):
-            decision = smart_router(prompt)  # هنا السحر الجديد
-
+            decision = smart_router(prompt)  
         if decision.get("action") == "analyze":
             ticker = decision.get("ticker")
             name = decision.get("search_term")
-            source = decision.get("source", "AI")  # عشان نعرف جابه منين
+            source = decision.get("source", "AI")  
 
             if source == "database":
                 st.success(f"✅ : **{name}** (الرمز: `{ticker}`)")
@@ -233,6 +216,7 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
             st.markdown(decision["reply"])
 
             st.session_state.messages.append({"role": "assistant", "content": decision["reply"]})
+
 
 
 
