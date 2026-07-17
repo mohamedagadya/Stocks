@@ -8,9 +8,9 @@ from thefuzz import process
 
 
 # ---------------------------------------------------------
-st.set_page_config(page_title="LAVa", page_icon="😘", layout="wide")
+st.set_page_config(page_title="تسلم الأيادي", page_icon="😘", layout="wide")
 try:
-    API_KEY = st.secrets["GROQ_API_KEY"]
+    API_KEY = st.secrets["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"]
 except:
     st.warning("مطلوب مفتاح API للعمل")
     st.stop()
@@ -167,8 +167,8 @@ def get_stock_chart(ticker):
 
 
 # Interface
-st.title("تسلم الايادي(الزنجار الاصلي مابيخونش)")
-st.caption("اكتب يا باشا السهم و هقولك تعمل ايه")
+st.title("BOLD")
+st.caption("Write a company")
 
 if "messages" not in st.session_state: st.session_state.messages = []
 
@@ -182,7 +182,7 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner('زوجونا'):
+        with st.spinner('جاري العمل'):
             decision = smart_router(prompt)  
         if decision.get("action") == "analyze":
             ticker = decision.get("ticker")
@@ -210,7 +210,7 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
                     st.markdown("### اتفضل:")
                     display_rtl(analysis)
                 else:
-                    st.error("مفيش أخبار. اكتب حاجة عدلة")
+                    st.error("مفيش أخبار.")
 
         elif decision.get("action") == "chat":
             st.markdown(decision["reply"])
