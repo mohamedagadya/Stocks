@@ -10,7 +10,7 @@ from thefuzz import process
 # ---------------------------------------------------------
 st.set_page_config(page_title="تسلم الأيادي", page_icon="😘", layout="wide")
 try:
-    API_KEY = st.secrets["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"]
+    API_KEY = st.secrets["GROQ_API_KEY"]
 except:
     st.warning("مطلوب مفتاح API للعمل")
     st.stop()
