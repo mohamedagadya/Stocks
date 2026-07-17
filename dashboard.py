@@ -249,6 +249,7 @@ def smart_router(user_input):
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
+@st.cache_data(ttl=900) # الاحتفاظ بالبيانات في الذاكرة لمدة 15 دقيقة
 def get_market_news(query):
     url = f"https://news.google.com/rss/search?q={query}&hl=ar&gl=EG&ceid=EG:ar"
     try:
@@ -286,6 +287,7 @@ def analyze_stock_news(news_text, stock_name):
     )
     return completion.choices[0].message.content
 
+@st.cache_data(ttl=900)        
 def get_stock_chart(ticker):
     try:
         stock = yf.Ticker(ticker)
