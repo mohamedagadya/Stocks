@@ -207,48 +207,43 @@ def find_ticker_smart(user_text):
 def smart_router(user_input):
     client = Groq(api_key=API_KEY)
     
-    # 1. البحث في القاموس أولاً
-    ticker, name = find_ticker_smart(user_input)
-    if ticker:
-        return {
-            "action": "analyze",
-            "ticker": ticker,
-            "search_term": name,
-            "source": "database"
-        }
-    
     system_prompt = """
-    أنت خبير أسواق مالية. استخرج رمز السهم (Yahoo Finance Ticker) واسم الشركة بدقة.
+    أنت خبير أسواق مالية وأنظمة تداول. مهمتك فهم طلب المستخدم واستخراج رمز السهم (Yahoo Finance Ticker) واسم الشركة بدقة تامة.
     
     القواعد الصارمة للرموز:
-    1. الأسهم المصرية (Egypt): يجب إضافة ".CA" في النهاية (مثال: COMI.CA).
-    2. الأسهم السعودية (Saudi): يجب إضافة ".SR" في النهاية (مثال: 2222.SR).
+    1. الأسهم المصرية (EGX): يجب إضافة ".CA" في النهاية (مثال: التجاري الدولي COMI.CA، فوري FWRY.CA، حديد عز ESRS.CA، موبكو MFPC.CA).
+    2. الأسهم السعودية (TADAWUL): يجب إضافة ".SR" في النهاية (مثال: أرامكو 2222.SR).
     3. الأسهم الأمريكية (US): بدون لاحقة (مثال: AAPL, TSLA, NVDA).
     4. العملات الرقمية: تنتهي بـ "-USD" (مثال: BTC-USD).
     
-    الرد JSON فقط:
+    حدد إذا كان المستخدم يطلب "تحليل سهم" أم "دردشة عادية".
+    الرد يجب أن يكون JSON فقط كالتالي:
+    
+    لو الطلب عن سهم معين:
     {
         "action": "analyze",
         "ticker": "الرمز الصحيح باللاحقة",
         "search_term": "اسم الشركة بالعربي"
     }
     
-    لو الكلام دردشة عادية: {"action": "chat"}
+    لو الكلام دردشة عادية أو استفسار عام:
+    {
+        "action": "chat"
+    }
     """
     
     try:
         completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.1-8b-instant", # موديل سريع جداً ومناسب لاستخراج البيانات
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_input}
             ],
-            temperature=0,
+            temperature=0, # صفر عشان ميهبدش في رموز الأسهم
             response_format={"type": "json_object"}
         )
         
         decision = json.loads(completion.choices[0].message.content)
-       
         return decision
 
     except Exception as e:
@@ -324,10 +319,8 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
             name = decision.get("search_term")
             source = decision.get("source", "AI")  
 
-            if source == "database":
-                st.success(f"✅ : **{name}** (الرمز: `{ticker}`)")
-            else:
-                st.info(f"🤖 : **{name}** (الرمز: `{ticker}`)")
+            
+            st.info(f"🤖 : **{name}** (الرمز: `{ticker}`)")
 
             # الرسم البياني
             chart_data = get_stock_chart(ticker)
