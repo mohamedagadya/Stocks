@@ -192,7 +192,8 @@ def find_ticker_smart(user_text):
     """
     بيدور في القاموس بتاعنا على أقرب كلمة للي المستخدم كتبه
     """
-    best_match = process.extractOne(user_text, list(STOCK_DB.keys()), score_cutoff=50)
+    # رفعنا نسبة الشبه لـ 80% عشان نمنع العك
+    best_match = process.extractOne(user_text, list(STOCK_DB.keys()), score_cutoff=80)
 
     if best_match:
         matched_name = best_match[0]
