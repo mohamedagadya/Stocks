@@ -6,7 +6,6 @@ import yfinance as yf
 import json
 from thefuzz import process  
 
-
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
 try:
@@ -31,7 +30,6 @@ STOCK_DB = {
     "أبو قير للأسمدة": "ABUK.CA",
     "سيدي كرير للبتروكيماويات sidpec": "SKPC.CA",
     "العامة لاستصلاح الاراضي" : "AALR.CA",
-    ""
 
     # Suadi Arabia
     "أرامكو aramco": "2222.SR",
@@ -52,7 +50,6 @@ STOCK_DB = {
     "bitcoin بيتكوين": "BTC-USD",
 
     # --- الدفعة الأولى المستخرجة من الموقع (A - E) ---
-    "العامة لاستصلاح الأراضي": "AALR.CA",
     "ابوقير للاسمدة": "ABUK.CA",
     "العربية لإدارة وتطوير الأصول": "ACAMD.CA",
     "Acapa Capital Holding": "ACAPA.CA",
@@ -147,14 +144,12 @@ STOCK_DB = {
     "مصر الجديدة للإسكان والتعمير": "HELI.CA",
     "بنك التعمير والإسكان": "HDBK.CA",
     "مجموعة إي إف جي القابضة (هيرميس)": "HRHO.CA",
-    "حديد عز": "ESRS.CA",
     "عز الدخيلة للصلب - الإسكندرية": "IRAX.CA",
     "ابن سينا فارما": "ISPH.CA",
     "جهينة للصناعات الغذائية": "JUFO.CA",
     "القاهرة الوطنية للاستثمار والاوراق المالية": "KWIN.CA",
     "مدينة مصر للإسكان والتعمير": "MASR.CA",
     "ماكرو جروب للمستحضرات الطبية": "MCRO.CA",
-    "مصر لإنتاج الأسمدة (موبكو)": "MFPC.CA",
     "الشركة المصرية لمدينة الإنتاج الإعلامي": "MPRC.CA",
     "ام ام جروب للصناعة والتجارة العالمية": "MTIE.CA",
     "مستشفى النزهه الدولي": "NINH.CA",
@@ -165,7 +160,6 @@ STOCK_DB = {
     "أوراسكوم كونستراكشون": "ORAS.CA",
     "أوراسكوم للتنمية مصر": "ORHD.CA",
     "النساجون الشرقيون للسجاد": "ORWE.CA",
-    "بالم هيلز للتعمير": "PHDC.CA",
     "إيبيكو للأدوية": "PHAR.CA",
     "بايونيرز بروبرتيز للتنمية العمرانية": "PRDC.CA",
     "بنك قطر الوطني الأهلي (QNB)": "QNBA.CA",
@@ -174,13 +168,9 @@ STOCK_DB = {
     "رمكو لإنشاء القرى السياحية": "RTVC.CA",
     "بنك البركة مصر": "SAUD.CA",
     "سبأ للأدوية": "SIPC.CA",
-    "سيدي كرير للبتروكيماويات (سيدبك)": "SKPC.CA",
     "الدلتا للسكر": "SUGR.CA",
-    "السويدي إلكتريك": "SWDY.CA",
-    "مجموعة طلعت مصطفى القابضة": "TMGH.CA",
     "المصرية للاتصالات": "ETEL.CA", 
     "زهراء المعادي للاستثمار والتعمير": "ZMID.CA",
-
 }
 
 def display_rtl(text):
@@ -195,14 +185,13 @@ def display_rtl(text):
         """,
         unsafe_allow_html=True
     )
+
 # ---------------------------------------------------------
 # (Fuzzy Search) 
 def find_ticker_smart(user_text):
     """
     بيدور في القاموس بتاعنا على أقرب كلمة للي المستخدم كتبه
     """
-    # بنستخدم process.extractOne عشان نجيب "أقرب" اسم في القائمة
-    # score_cutoff=60: يعني لازم نسبة الشبه تكون فوق 60% عشان نقبله
     best_match = process.extractOne(user_text, list(STOCK_DB.keys()), score_cutoff=50)
 
     if best_match:
@@ -211,7 +200,6 @@ def find_ticker_smart(user_text):
         return ticker, matched_name
     else:
         return None, None
-
 
 # ---------------------------------------------------------
 #(Router)
@@ -244,7 +232,7 @@ def smart_router(user_input):
         "search_term": "اسم الشركة بالعربي"
     }
     
-    لو الكلام دردشة عادية: {"action": "chat", "reply": "..."}
+    لو الكلام دردشة عادية: {"action": "chat"}
     """
     
     try:
@@ -265,7 +253,6 @@ def smart_router(user_input):
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
-
 def get_market_news(query):
     url = f"https://news.google.com/rss/search?q={query}&hl=ar&gl=EG&ceid=EG:ar"
     try:
@@ -276,7 +263,6 @@ def get_market_news(query):
         return "\n".join([f"- {item.title.text}" for item in items[:200]])
     except:
         return None
-
 
 def analyze_stock_news(news_text, stock_name):
     client = Groq(api_key=API_KEY)
@@ -294,15 +280,14 @@ def analyze_stock_news(news_text, stock_name):
     """
     
     completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile", # تم تغيير الموديل لنسخة أقوى
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"السهم: {stock_name}\n\nالأخبار:\n{news_text}"}
         ],
-        temperature=0.2 # تقليل العشوائية عشان التحليل المالي يكون دقيق
+        temperature=0.2 
     )
     return completion.choices[0].message.content
-
 
 def get_stock_chart(ticker):
     try:
@@ -312,25 +297,27 @@ def get_stock_chart(ticker):
     except:
         return None
 
-
 # Interface
 st.title("BOLD")
 st.caption("Write a company")
 
-if "messages" not in st.session_state: st.session_state.messages = []
+if "messages" not in st.session_state: 
+    st.session_state.messages = []
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("اكتب اسم السهم..."):
+if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن التحليل..."):
+    # إضافة رسالة المستخدم للتاريخ
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner('جاري العمل'):
+        with st.spinner('جاري العمل...'):
             decision = smart_router(prompt)  
+            
         if decision.get("action") == "analyze":
             ticker = decision.get("ticker")
             name = decision.get("search_term")
@@ -349,22 +336,47 @@ if prompt := st.chat_input("اكتب اسم السهم..."):
             else:
                 st.warning(f"مش لاقي بيانات للرمز {ticker}")
 
-            # الأخبار
-            with st.spinner('جاري التحليل...'):
+            # الأخبار والتحليل
+            with st.spinner('جاري التحليل واستخراج البيانات...'):
                 news = get_market_news(name)
                 if news:
                     analysis = analyze_stock_news(news, name)
-                    st.markdown("### اتفضل:")
+                    st.markdown("### اتفضل التقرير:")
                     display_rtl(analysis)
+                    
+                    # === التعديل الأساسي: حفظ التحليل في الذاكرة عشان الموديل يفتكره ===
+                    st.session_state.messages.append({"role": "assistant", "content": f"تم تحليل سهم {name}:\n\n{analysis}"})
                 else:
-                    st.error("مفيش أخبار.")
+                    st.error("مفيش أخبار متاحة حالياً.")
 
         elif decision.get("action") == "chat":
-            st.markdown(decision["reply"])
-
-            st.session_state.messages.append({"role": "assistant", "content": decision["reply"]})
-
-
-
-
-
+            with st.spinner('جاري الرد...'):
+                client = Groq(api_key=API_KEY)
+                
+                # بناء سياق المحادثة المخصص للدردشة
+                chat_messages = [
+                    {"role": "system", "content": "أنت مساعد مالي ذكي ومحترف. مهمتك الإجابة على استفسارات المستخدم ومناقشته بناءً على سياق المحادثة السابق. إذا سألك عن شركة قمت بتحليلها سابقاً، استخدم هذا التحليل للرد بعمق."}
+                ]
+                
+                # تمرير آخر 8 رسائل من الذاكرة للموديل عشان يفهم السياق 
+                for msg in st.session_state.messages[-8:]:
+                    chat_messages.append({"role": msg["role"], "content": msg["content"]})
+                
+                try:
+                    # استخدام موديل 70b للدردشة عشان يكون أذكى في الردود
+                    chat_completion = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=chat_messages,
+                        temperature=0.5
+                    )
+                    reply = chat_completion.choices[0].message.content
+                    
+                    # عرض الرد وحفظه
+                    st.markdown(reply)
+                    st.session_state.messages.append({"role": "assistant", "content": reply})
+                    
+                except Exception as e:
+                    st.error(f"حصل خطأ أثناء الدردشة: {str(e)}")
+                    
+        elif decision.get("action") == "error":
+            st.error(decision.get("reply"))
