@@ -239,10 +239,11 @@ def smart_router(messages):
         messages_to_send.append({"role": msg["role"], "content": msg["content"]})
         
     try:
+        # التعديل هنا: استخدام الموديل الأكبر والأذكى للربط المنطقي
         completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile", 
             messages=messages_to_send,
-            temperature=0, # الصفر بيمنع الهبد العشوائي تماماً
+            temperature=0, # مهم يفضل صفر عشان يكون دقيق في الرموز وميهبدش
             response_format={"type": "json_object"}
         )
         
