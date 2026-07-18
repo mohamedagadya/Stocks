@@ -208,28 +208,21 @@ def smart_router(messages):
     client = Groq(api_key=API_KEY)
     
     system_prompt = """
-    أنت نظام توجيه ذكي (Router). مهمتك قراءة المحادثة وتحديد نية المستخدم في رسالته **الأخيرة فقط** بدقة.
+    أنت نظام توجيه ذكي (Router). مهمتك قراءة المحادثة وتحديد نية المستخدم في رسالته الأخيرة فقط بدقة.
     هام جداً: يجب أن يكون الرد بصيغة JSON فقط.
     
-    القواعد الصارمة:
-    1. إذا كانت الرسالة الأخيرة تطلب تحليل سهم، أو تذكر اسم شركة بشكل مباشر (مثل: "فوري"، "التجاري الدولي"، "أبل")، اختر "analyze" واستخرج الرمز:
-    {
-        "action": "analyze",
-        "ticker": "الرمز هنا",
-        "search_term": "اسم الشركة"
-    }
+    القواعد الصارمة للرموز (Tickers):
+    1. للأسهم المصرية: يجب إضافة ".CA" في النهاية. 
+       - استخدم هذه القائمة المرجعية للأسهم المصرية للوصول للرمز الدقيق:
+         (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
+       - إذا سأل المستخدم عن شركة مصرية غير موجودة بالقائمة، استنتج الرمز الأقرب وأضف .CA.
+       
+    2. الأسهم السعودية: يجب إضافة ".SR" (مثال: 2222.SR).
+    3. الأسهم الأمريكية: بدون لاحقة (مثال: AAPL, TSLA).
     
-    قواعد بناء الرموز (Tickers):
-    - الأسهم المصرية: يجب إضافة ".CA" (مثال: COMI.CA, FWRY.CA, ESRS.CA, MFPC.CA)
-    - الأسهم السعودية: يجب إضافة ".SR" (مثال: 2222.SR, 1120.SR)
-    - الأسهم الأمريكية: بدون لاحقة (مثال: AAPL, TSLA)
-    - العملات الرقمية: تنتهي بـ "-USD" (مثال: BTC-USD)
-    
-    
-    2. إذا كانت الرسالة الأخيرة عبارة عن سؤال استكمالي، استفسار عن التحليل السابق، أو دردشة (مثل: "اشرح أكثر"، "ما رأيك؟"، "هل أشتري؟")، اختر "chat":
-    {
-        "action": "chat"
-    }
+    شكل الرد المطلوب (JSON):
+    - إذا كان الطلب تحليل سهم: {"action": "analyze", "ticker": "الرمز", "search_term": "اسم الشركة"}
+    - إذا كان الطلب دردشة أو سؤال عن تحليل سابق: {"action": "chat"}
     """
     
     # نجهز الرسايل ونحط الـ System Prompt في الأول
@@ -258,40 +251,14 @@ def smart_router(messages):
 def get_market_news(query):
     url = f"https://news.google.com/rss/search?q={query}&hl=ar&gl=EG&ceid=EG:ar"
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=5)
         soup = BeautifulSoup(response.content, features="xml")
         items = soup.find_all("item")
         
         if not items: return None
         
-        detailed_news = []
-        # هنكتفي بأهم وأحدث 5 أخبار بس عشان منضربش الـ Token Limit بتاع الموديل وعشان وقت التحميل
-        for item in items[:3]:
-            title = item.title.text
-            link = item.link.text
-            
-            try:
-                # الدخول على رابط المقال نفسه
-                article_resp = requests.get(link, timeout=5)
-                article_soup = BeautifulSoup(article_resp.content, 'html.parser')
-                
-                # سحب النصوص من البراجرافات
-                paragraphs = article_soup.find_all('p')
-                # تجميع النصوص اللي طولها معقول (عشان نتجاهل كلمات زي "حقوق النشر" وغيرها)
-                content = " ".join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 30])
-                
-                # لو ملقيناش محتوى (بعض المواقع بتعمل حماية)، نكتفي بالعنوان
-                if not content:
-                    content = "التفاصيل غير متاحة بسبب حماية الموقع."
-                    
-                # بناخد أول 800 حرف من كل خبر عشان ندي الخلاصة للموديل من غير حشو
-                detailed_news.append(f"عنوان الخبر: {title}\nالتفاصيل: {content[:400]}...\n") 
-                
-            except Exception as e:
-                # لو حصل مشكلة في الرابط ده، نضيف العنوان بس ونكمل
-                detailed_news.append(f"عنوان الخبر: {title}\n")
-                
-        return "\n---\n".join(detailed_news)
+        # الاكتفاء بأهم 15 عنوان إخباري فقط لتوفير التوكنز وتسريع الرد
+        return "\n".join([f"- {item.title.text}" for item in items[:25]])
         
     except Exception as e:
         return None
