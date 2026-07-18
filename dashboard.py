@@ -6,6 +6,7 @@ import yfinance as yf
 import json
 from thefuzz import process  
 import re
+import pandas as pd
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
 try:
@@ -311,28 +312,30 @@ def scrape_egx_mubasher(ticker):
         return None
 
 
-def analyze_stock_news(news_text, stock_name):
+def analyze_stock_news(news_text, stock_name, tech_data=""):
     client = Groq(api_key=API_KEY)
     
     system_prompt = """
-    أنت محلل مالي خبير ومستشار استثماري. مهمتك تقديم تحليل شامل للأخبار المقدمة لك بأسلوب طبيعي، مرن، واحترافي يشبه تقارير كبار المحللين.
+    أنت محلل مالي خبير ومستشار استثماري. مهمتك تقديم تحليل شامل بناءً على الأخبار الأساسية والمؤشرات الفنية المقدمة لك.
     
-    توجيهات التحليل (تكيّف مع حجم المعلومات):
-    - لا تلتزم بقالب رقمي ثابت. إذا كانت الأخبار دسمة، تعمق في الشرح والاستنتاجات. وإذا كانت الأخبار شحيحة، قدم ملخصاً مكثفاً وواضحاً.
-    - ابدأ بفقرة افتتاحية تلخص المزاج العام للسهم (إيجابي، سلبي، محايد).
-    - اسرد أهم الأحداث أو الأرقام التي تؤثر فعلياً على السهم بطريقة متصلة أو في نقاط مختصرة (حسب الأنسب للسياق).
-    - قيم مستوى المخاطرة بناءً على المعطيات الحالية بطريقة مدمجة داخل التحليل.
-    - اختم برؤية استثمارية موضوعية ومحايدة.
-    - استخدم تنسيقاً مريحاً للعين (عناوين فرعية بسيطة، فقرات قصيرة، أو نقاط عند الحاجة فقط).
+    توجيهات التحليل:
+    - ابدأ بملخص يدمج بين المزاج العام للأخبار والوضع الفني للسهم (مثال: السهم إيجابي مالياً ولكنه متشبع بالشراء فنياً).
+    - وضح دلالة المؤشرات الفنية (RSI والمتوسطات المتحركة) بشكل مبسط.
+    - اسرد أهم الأخبار المؤثرة.
+    - قيم مستوى المخاطرة بناءً على المعطيات المدمجة.
+    - قدم رؤية استثمارية موضوعية (هل السعر الحالي نقطة دخول جيدة أم ننتظر تصحيح؟).
     """
+    
+    # دمج الأخبار مع التحليل الفني في رسالة واحدة للموديل
+    combined_content = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
     completion = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"السهم: {stock_name}\n\nالأخبار:\n{news_text}"}
+            {"role": "user", "content": combined_content}
         ],
-        temperature=0.3 # رفعنا العشوائية درجة بسيطة عشان ندي مساحة للمرونة في صياغة الكلام
+        temperature=0.3 
     )
     return completion.choices[0].message.content
 
@@ -341,10 +344,24 @@ def get_stock_chart(ticker):
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="6mo")
+        
+        if hist.empty:
+            return None
+            
+        # حساب المتوسطات المتحركة (Moving Averages)
+        hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
+        hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+        
+        # حساب مؤشر القوة النسبية (RSI 14)
+        delta = hist['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        hist['RSI_14'] = 100 - (100 / (1 + rs))
+        
         return hist
     except:
         return None
-
 
 
 
@@ -437,19 +454,39 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                 news = get_market_news(name)
 
             # الرسم البياني (استخدام YFinance دايماً للرسم لأنه بيجيب تاريخ 6 شهور)
+            # الرسم البياني والمؤشرات الفنية
             chart_data = get_stock_chart(ticker)
+            tech_text = "" # نص المؤشرات اللي هيروح للموديل
+            
             if chart_data is not None and not chart_data.empty:
                 st.line_chart(chart_data['Close'], color="#FF4B4B")
-                # لو السهم مش مصري، نعرض سعر الإغلاق بتاع ياهو فاينانس
-                if not ticker.endswith(".CA"):
-                    st.metric("السعر الحالي (Yahoo)", round(chart_data['Close'].iloc[-1], 2))
+                
+                # استخراج أحدث قيم للمؤشرات
+                latest_close = chart_data['Close'].iloc[-1]
+                latest_sma20 = chart_data['SMA_20'].iloc[-1]
+                latest_sma50 = chart_data['SMA_50'].iloc[-1]
+                latest_rsi = chart_data['RSI_14'].iloc[-1]
+                
+                # عرض المؤشرات في أعمدة منظمة
+                cols = st.columns(4)
+                cols[0].metric("السعر الحالي", f"{latest_close:.2f}")
+                
+                # التأكد إن القيم مش NaN قبل عرضها
+                if pd.notna(latest_rsi):
+                    cols[1].metric("RSI (14)", f"{latest_rsi:.2f}")
+                    cols[2].metric("SMA 20", f"{latest_sma20:.2f}")
+                    cols[3].metric("SMA 50", f"{latest_sma50:.2f}")
+                    
+                    # تجهيز النص الفني للذكاء الاصطناعي
+                    tech_text = f"البيانات الفنية الحالية:\n- السعر: {latest_close:.2f}\n- مؤشر القوة النسبية (RSI): {latest_rsi:.2f}\n- متوسط متحرك 20 يوم: {latest_sma20:.2f}\n- متوسط متحرك 50 يوم: {latest_sma50:.2f}"
             else:
                 st.warning(f"عفواً، لا توجد بيانات تاريخية للرسم البياني لرمز {ticker}")
 
             # التحليل بواسطة الذكاء الاصطناعي
-            with st.spinner('جاري قراءة الأخبار واستخراج التقرير...'):
+            with st.spinner('جاري قراءة الأخبار والبيانات الفنية لاستخراج التقرير...'):
                 if news:
-                    analysis = analyze_stock_news(news, name)
+                    # تمرير الأخبار مع البيانات الفنية
+                    analysis = analyze_stock_news(news, name, tech_text)
                     st.markdown("### اتفضل التقرير:")
                     display_rtl(analysis)
                     
