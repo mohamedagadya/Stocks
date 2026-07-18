@@ -519,7 +519,7 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                 try:
                     # استخدام موديل 70b للدردشة عشان يكون أذكى في الردود
                     chat_completion = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model="llama-3.1-8b-instant",
                         messages=chat_messages,
                         temperature=0.5
                     )
