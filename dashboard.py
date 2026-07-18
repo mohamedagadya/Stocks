@@ -7,6 +7,7 @@ import json
 from thefuzz import process  
 import re
 import pandas as pd
+from supabase import create_client, Client
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
 try:
@@ -15,164 +16,43 @@ except:
     st.warning("مطلوب مفتاح API للعمل")
     st.stop()
 
-# Data base
-STOCK_DB = {
-    # Egypt
-    "البنك التجاري الدولي cib": "COMI.CA",
-    "فوري fawry": "FWRY.CA",
-    "حديد عز ezz steel": "ESRS.CA",
-    "مجموعة طلعت مصطفى tmg": "TMGH.CA",
-    "السويدي إليكتريك elsewedy": "SWDY.CA",
-    "إي فاينانس e-finance": "EFIH.CA",
-    "بلتون المالية beltone": "BTLL.CA",
-    "بالم هيلز palm hills": "PHDC.CA",
-    "هيرميس efg hermes": "HRHO.CA",
-    "موبكو mopco": "MFPC.CA",
-    "أبو قير للأسمدة": "ABUK.CA",
-    "سيدي كرير للبتروكيماويات sidpec": "SKPC.CA",
-    "العامة لاستصلاح الاراضي" : "AALR.CA",
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.warning("حدث خطأ في الاتصال بقاعدة البيانالت.")
+    st.stop()
 
-    # Suadi Arabia
-    "أرامكو aramco": "2222.SR",
-    "مصرف الراجحي al rajhi": "1120.SR",
-    "سابك sabic": "2010.SR",
-    "الأهلي السعودي snb": "1180.SR",
-    "الكهرباء السعودية": "5110.SR",
 
-    # USA
-    "apple أبل": "AAPL",
-    "tesla تسلا": "TSLA",
-    "microsoft مايكروسوفت": "MSFT",
-    "google جوجل": "GOOGL",
-    "amazon أمازون": "AMZN",
-    "meta فيسبوك": "META",
-    "nvidia إنفيديا": "NVDA",
-    "gold ذهب": "GC=F", 
-    "bitcoin بيتكوين": "BTC-USD",
+def get_ticker_from_db(search_term):
+    """
+    دالة بتسحب الأسهم من Supabase وتدور على أقرب تطابق ذكي
+    """
+    try:
+        # سحب كل الشركات من قاعدة البيانات
+        response = supabase.table("stocks").select("company_name, ticker").execute()
+        all_stocks = response.data
+        
+        if not all_stocks:
+            return None, None
+            
+        # تحويل البيانات لقاموس عشان نستخدم البحث الذكي
+        db_dict = {row['company_name']: row['ticker'] for row in all_stocks}
+        
+        # البحث المرن بنسبة تطابق 70%
+        best_match = process.extractOne(search_term, list(db_dict.keys()), score_cutoff=70)
+        
+        if best_match:
+            matched_name = best_match[0]
+            return db_dict[matched_name], matched_name
+        return None, None
+        
+    except Exception as e:
+        st.error(f"حصل خطأ في الاتصال بقاعدة البيانات: {e}")
+        return None, None
 
-    # --- الدفعة الأولى المستخرجة من الموقع (A - E) ---
-    "ابوقير للاسمدة": "ABUK.CA",
-    "العربية لإدارة وتطوير الأصول": "ACAMD.CA",
-    "Acapa Capital Holding": "ACAPA.CA",
-    "Alexandria Company For Refractories": "ACFR.CA",
-    "العربية لحليج الأقطان": "ACGC.CA",
-    "Act Financial": "ACTF.CA",
-    "أدكو": "ADCI.CA",
-    "مصرف أبو ظبي الإسلامي": "ADIB.CA",
-    "آراب ديري-باندا": "ADPC.CA",
-    "أراب للتنمية و الاستثمار العقاري": "ADRI.CA",
-    "الاهلي للتنمية والاستثمار": "AFDI.CA",
-    "مطاحن ومخابز الإسكندرية": "AFMC.CA",
-    "Arabia for Investment and Development": "AIDC.CA",
-    "اطلس لاستصلاح الاراضى": "AIFI.CA",
-    "العربية للاستثمارات": "AIH.CA",
-    "اجواء": "AJWA.CA",
-    "الاسكندرية لتداول الحاويات": "ALCN.CA",
-    "Alexandria Cement Co.": "ALEX.CA",
-    "الالومنيوم العربية": "ALUM.CA",
-    "عامر جروب": "AMER.CA",
-    "المركز الطبي الجديد - الإسكندرية": "AMES.CA",
-    "الملتقى العربي للاستثمارات": "AMIA.CA",
-    "أموك": "AMOC.CA",
-    "المؤشر": "AMPI.CA",
-    "ALNAHDA Industrial Co.": "ANCC.CA",
-    "Advanced Pharmaceutical Packaging Co.": "APPC.CA",
-    "يونيراب": "APSW.CA",
-    "بورتو جروب": "ARAB.CA",
-    "العربية للأسمنت": "ARCC.CA",
-    "المجموعة المصرية العقارية": "AREH.CA",
-    "العربية للمحابس": "ARVA.CA",
-    "اسيك للتعدين": "ASCM.CA",
-    "بايونيرز القابضة": "ASPI.CA",
-    "ايه تي ليس": "ATLC.CA",
-    "عتاقة": "ATQA.CA",
-    "الاسكندرية للادوية": "AXPH.CA",
-    "البدر للبلاستيك": "BIDI.CA",
-    "بى اى جى للتجارة والاستثمار": "BIGP.CA",
-    "بى بى اى القابضة": "BINV.CA",
-    "جلاكسو سميثكلاين": "BIOC.CA",
-    "Bonyan for Development and Trade": "BONY.CA",
-    "بلتون المالية": "BTFH.CA",
-    "القاهرة للخدمات التعليمية": "CAED.CA",
-    "بنك قناة السويس": "CANA.CA",
-    "القلعة للاستشارات المالية": "CCAP.CA",
-    "الخليجية الكندية للاستثمار العقاري العربي": "CCRS.CA",
-    "مطاحن مصر الوسطى": "CEFM.CA",
-    "ريماس": "CERA.CA",
-    "العرفة القابضة": "CFGH.CA",
-    "سي اي كابيتال القابضة": "CICH.CA",
-    "Chemical Dev Ind": "CCID.CA",
-    "كريدي أجريكول": "CIEB.CA",
-    "Cairo For Investment And Real Estate Developments - CIRA": "CIRA.CA",
-    "مستشفى كليوباترا": "CLHO.CA",
-    "Contact Financial Holding SAE": "CNFN.CA",
-    "البنك التجاري الدولي": "COMI.CA",
-    "العقارية للبنوك الوطنية للتنمية": "COPR.CA",
-    "القاهرة للزيوت والصابون": "COSG.CA",
-    "القاهرة للادوية": "CPCI.CA",
-    "Catalyst Partners Middle East": "CPME.CA",
-    "ليفت سلاب مصر": "CRST.CA",
-    "القناة للتوكيلات الملاحية": "CSAG.CA",
-    "التعمير والاستشارات الهندسية": "DAPH.CA",
-    "Damietta Container and Cargo Handling": "DCCC.CA",
-    "Delta Construction & Rebuilding Co.": "DCRC.CA",
-    "الدلتا للتأمين": "DEIN.CA",
-    "Digitize for Investment And Technology": "DGTZ.CA",
-    "دومتي": "DOMT.CA",
-    "دايس": "DSCW.CA",
-    "دلتا للطباعة والتغليف": "DTPP.CA",
-    "العربية لاستصلاح الاراضي": "EALR.CA",
-    "ثمار": "EASB.CA",
-    "ايسترن كومباني": "EAST.CA",
-    "اصول إى إس بى للوساطة في الاوراق المالية": "EBSC.CA",
-    "الجوهرة": "ECAP.CA",
-    "مطاحن شرق الدلتا": "EDFM.CA",
-    "العربية للصناعات الهندسية": "EEII.CA",
-    "Egypt Education Platform - EEP": "EEPE.CA",
-    "Egyptian Ferro All": "EFAC.CA",
-    "المالية والصناعية المصرية": "EFIC.CA",
-    "ايديتا": "EFID.CA",
-    "e-finance for Digital and Financial Investments": "EFIH.CA",
-    "مصر للالومنيوم": "EGAL.CA",
-    "غاز مصر": "EGAS.CA",
-    "البنك المصري الخليجي": "EGBE.CA",
-    "كيما": "EGCH.CA",
-    "وثائق شركة صندوق استثمار المصريين للاستثمار العقاري": "EGREF.CA",
 
-    # --- استكمال أبرز وأهم الشركات لباقي الحروف (F - Z) ---
-    "فوري لتكنولوجيا البنوك والمدفوعات الإلكترونية": "FWRY.CA",
-    "جي بي كورب (غبور أوتو)": "GBCO.CA",
-    "مصر الجديدة للإسكان والتعمير": "HELI.CA",
-    "بنك التعمير والإسكان": "HDBK.CA",
-    "مجموعة إي إف جي القابضة (هيرميس)": "HRHO.CA",
-    "عز الدخيلة للصلب - الإسكندرية": "IRAX.CA",
-    "ابن سينا فارما": "ISPH.CA",
-    "جهينة للصناعات الغذائية": "JUFO.CA",
-    "القاهرة الوطنية للاستثمار والاوراق المالية": "KWIN.CA",
-    "مدينة مصر للإسكان والتعمير": "MASR.CA",
-    "ماكرو جروب للمستحضرات الطبية": "MCRO.CA",
-    "الشركة المصرية لمدينة الإنتاج الإعلامي": "MPRC.CA",
-    "ام ام جروب للصناعة والتجارة العالمية": "MTIE.CA",
-    "مستشفى النزهه الدولي": "NINH.CA",
-    "السادس من أكتوبر للتنمية والاستثمار (سوديك)": "OCDI.CA",
-    "أوراسكوم المالية القابضة": "OFH.CA",
-    "أوراسكوم للاستثمار القابضة": "OIH.CA",
-    "عبور لاند للصناعات الغذائية": "OLFI.CA",
-    "أوراسكوم كونستراكشون": "ORAS.CA",
-    "أوراسكوم للتنمية مصر": "ORHD.CA",
-    "النساجون الشرقيون للسجاد": "ORWE.CA",
-    "إيبيكو للأدوية": "PHAR.CA",
-    "بايونيرز بروبرتيز للتنمية العمرانية": "PRDC.CA",
-    "بنك قطر الوطني الأهلي (QNB)": "QNBA.CA",
-    "راية القابضة للاستثمارات المالية": "RAYA.CA",
-    "العاشر من رمضان للصناعات الدوائية (راميدا)": "RMDA.CA",
-    "رمكو لإنشاء القرى السياحية": "RTVC.CA",
-    "بنك البركة مصر": "SAUD.CA",
-    "سبأ للأدوية": "SIPC.CA",
-    "الدلتا للسكر": "SUGR.CA",
-    "المصرية للاتصالات": "ETEL.CA", 
-    "زهراء المعادي للاستثمار والتعمير": "ZMID.CA",
-}
 
 def display_rtl(text):
     """
@@ -437,10 +317,20 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
             decision = smart_router(st.session_state.messages)  
             
         if decision.get("action") == "analyze":
-            ticker = decision.get("ticker")
-            name = decision.get("search_term")
+            search_term = decision.get("search_term")
             
-            st.info(f"🤖 تم استخراج السهم: **{name}** (الرمز: `{ticker}`)")
+            # سحب الرمز الدقيق من قاعدة البيانات السحابية
+            db_ticker, db_name = get_ticker_from_db(search_term)
+            
+            if db_ticker:
+                ticker = db_ticker
+                name = db_name
+                st.info(f"🤖 تم استخراج السهم بنجاح من قاعدة البيانات: **{name}** (الرمز: `{ticker}`)")
+            else:
+                # خطة بديلة لو السهم مش متسجل لسه
+                ticker = decision.get("ticker")
+                name = search_term
+                st.info(f"🤖 تم استنتاج السهم بواسطة الذكاء الاصطناعي: **{name}** (الرمز: `{ticker}`)")
 
             # مسار السوق المصري (بيانات لحظية من مباشر)
             if ticker.endswith(".CA"):
