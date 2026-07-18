@@ -6,3 +6,4 @@ groq
 thefuzz
 lxml
 plotly
+pandas
