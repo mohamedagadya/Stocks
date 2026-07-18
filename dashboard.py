@@ -345,6 +345,51 @@ def get_stock_chart(ticker):
     except:
         return None
 
+
+
+
+# ---------------------------------------------------------
+# (DCA Calculator - Sidebar)
+with st.sidebar:
+    st.header("🧮 حاسبة الاستثمار التراكمي (DCA)")
+    st.write("احسب متوسط سعرك بعد ضخ مبلغ الشراء الجديد.")
+    
+    st.divider()
+    
+    # 1. بيانات المحفظة الحالية
+    st.subheader("وضعك الحالي")
+    owned_shares = st.number_input("عدد الأسهم اللي معاك حالياً", min_value=0.0, value=0.0, step=1.0)
+    average_price = st.number_input("متوسط السعر الحالي", min_value=0.0, value=0.0, step=1.0)
+    
+    st.divider()
+    
+    # 2. تفاصيل الشراء الجديد
+    st.subheader("الشراء الجديد")
+    new_investment = st.number_input("المبلغ اللي هتستثمره", min_value=0.0, value=500.0, step=100.0)
+    current_market_price = st.number_input("سعر السهم الحالي على الشاشة", min_value=1.0, value=50.0, step=1.0)
+    
+    if st.button("احسب المتوسط الجديد", use_container_width=True):
+        if current_market_price > 0:
+            # العمليات الحسابية
+            current_total_value = owned_shares * average_price
+            new_shares_bought = new_investment / current_market_price
+            
+            total_shares = owned_shares + new_shares_bought
+            total_invested = current_total_value + new_investment
+            
+            # تجنب القسمة على صفر
+            if total_shares > 0:
+                new_average = total_invested / total_shares
+            else:
+                new_average = 0.0
+            
+            # عرض النتائج بشكل منظم
+            st.success(f" متوسط السعر الجديد: **{new_average:.2f}**")
+            st.info(f" إجمالي الأسهم بعد الشراء: **{total_shares:.2f}** سهم")
+            st.info(f" إجمالي التكلفة المدفوعة: **{total_invested:.2f}**")
+        else:
+            st.error("سعر السوق لا يمكن أن يكون صفراً.")
+
 # Interface
 st.title("BOLD")
 st.caption("Write a company")
