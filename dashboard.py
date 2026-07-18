@@ -512,12 +512,12 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     {"role": "system", "content": "أنت مساعد مالي ذكي ومحترف. مهمتك الإجابة على استفسارات المستخدم ومناقشته بناءً على سياق المحادثة السابق. إذا سألك عن شركة قمت بتحليلها سابقاً، استخدم هذا التحليل للرد بعمق."}
                 ]
                 
-                # تمرير آخر 8 رسائل من الذاكرة للموديل عشان يفهم السياق 
+                # تمرير آخر 4 رسائل من الذاكرة للموديل عشان يفهم السياق 
                 for msg in st.session_state.messages[-4:]:
                     chat_messages.append({"role": msg["role"], "content": msg["content"]})
                 
                 try:
-                    # استخدام موديل 70b للدردشة عشان يكون أذكى في الردود
+                    # التعديل هنا: استخدام موديل llama-3.1-8b-instant لتجنب الـ Rate Limit
                     chat_completion = client.chat.completions.create(
                         model="llama-3.1-8b-instant",
                         messages=chat_messages,
@@ -532,7 +532,7 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                 except Exception as e:
                     error_msg = str(e)
                     if "429" in error_msg or "Rate limit" in error_msg:
-                        st.error("(Rate Limit) ")
+                        st.error("(Rate Limit)")
                     else:
                         st.error(f"حصل خطأ أثناء الدردشة: {error_msg}")
                     
