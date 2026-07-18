@@ -204,42 +204,38 @@ def find_ticker_smart(user_text):
 
 # ---------------------------------------------------------
 #(Router)
-def smart_router(user_input):
+def smart_router(messages):
     client = Groq(api_key=API_KEY)
     
     system_prompt = """
-    أنت خبير أسواق مالية وأنظمة تداول. مهمتك فهم طلب المستخدم واستخراج رمز السهم (Yahoo Finance Ticker) واسم الشركة بدقة تامة.
+    أنت موجه ذكي (Router) لتطبيق أسواق مالية. مهمتك قراءة سياق المحادثة وتحديد نية المستخدم في رسالته الأخيرة.
     
-    القواعد الصارمة للرموز:
-    1. الأسهم المصرية (EGX): يجب إضافة ".CA" في النهاية (مثال: التجاري الدولي COMI.CA، فوري FWRY.CA، حديد عز ESRS.CA، موبكو MFPC.CA).
-    2. الأسهم السعودية (TADAWUL): يجب إضافة ".SR" في النهاية (مثال: أرامكو 2222.SR).
-    3. الأسهم الأمريكية (US): بدون لاحقة (مثال: AAPL, TSLA, NVDA).
-    4. العملات الرقمية: تنتهي بـ "-USD" (مثال: BTC-USD).
-    
-    حدد إذا كان المستخدم يطلب "تحليل سهم" أم "دردشة عادية".
-    الرد يجب أن يكون JSON فقط كالتالي:
-    
-    لو الطلب عن سهم معين:
+    القواعد:
+    1. إذا كان المستخدم يطلب صراحة تحليل "سهم جديد" أو يسأل عن شركة لم يتم تحليلها بعد، قم باستخراج الرمز:
     {
         "action": "analyze",
-        "ticker": "الرمز الصحيح باللاحقة",
-        "search_term": "اسم الشركة بالعربي"
+        "ticker": "الرمز بلاحقة .CA لمصر أو .SR للسعودية أو بدون لأمريكا",
+        "search_term": "اسم الشركة"
     }
     
-    لو الكلام دردشة عادية أو استفسار عام:
+    2. إذا كان المستخدم يسأل سؤالاً مبنياً على التحليل السابق، يستفسر عن تفاصيل، أو يدردش بشكل عام، اختر فوراً:
     {
         "action": "chat"
     }
     """
     
+    # نجهز الرسايل ونحط الـ System Prompt في الأول
+    messages_to_send = [{"role": "system", "content": system_prompt}]
+    
+    # نبعت للموجه آخر 4 رسايل بس عشان يفهم السياق وميتلخبطش
+    for msg in messages[-4:]:
+        messages_to_send.append({"role": msg["role"], "content": msg["content"]})
+        
     try:
         completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant", # موديل سريع جداً ومناسب لاستخراج البيانات
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_input}
-            ],
-            temperature=0, # صفر عشان ميهبدش في رموز الأسهم
+            model="llama-3.1-8b-instant",
+            messages=messages_to_send,
+            temperature=0, 
             response_format={"type": "json_object"}
         )
         
@@ -315,7 +311,7 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
 
     with st.chat_message("assistant"):
         with st.spinner('جاري العمل...'):
-            decision = smart_router(prompt)  
+            decision = smart_router(st.session_state.messages)  
             
         if decision.get("action") == "analyze":
             ticker = decision.get("ticker")
