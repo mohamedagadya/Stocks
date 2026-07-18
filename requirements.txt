@@ -6,4 +6,3 @@ groq
 thefuzz
 lxml
 plotly
-re
