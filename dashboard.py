@@ -326,19 +326,27 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
     - قدم رؤية استثمارية موضوعية (هل السعر الحالي نقطة دخول جيدة أم ننتظر تصحيح؟).
     """
     
-    # دمج الأخبار مع التحليل الفني في رسالة واحدة للموديل
     combined_content = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": combined_content}
-        ],
-        temperature=0.3 
-    )
-    return completion.choices[0].message.content
-
+    try:
+        completion = client.chat.completions.create(
+            # تغيير الموديل لتخطي الليميت المقفول
+            model="llama-3.1-8b-instant", 
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": combined_content}
+            ],
+            temperature=0.3 
+        )
+        return completion.choices[0].message.content
+        
+    except Exception as e:
+        error_msg = str(e)
+        # اصطياد الإيرور عشان الأبلكيشن ميضربش
+        if "Rate limit" in error_msg or "429" in error_msg:
+            return "عذراً، انتهت الباقة المجانية للذكاء الاصطناعي (Rate Limit). يرجى الانتظار قليلاً أو تجربة سهم آخر لاحقاً."
+        else:
+            return f"حدث خطأ أثناء التحليل: {error_msg}"
 @st.cache_data(ttl=900)        
 def get_stock_chart(ticker):
     try:
