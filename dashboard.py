@@ -402,28 +402,46 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
         if decision.get("action") == "analyze":
             ticker = decision.get("ticker")
             name = decision.get("search_term")
-            source = decision.get("source", "AI")  
-
             
-            st.info(f"🤖 : **{name}** (الرمز: `{ticker}`)")
+            st.info(f"🤖 تم استخراج السهم: **{name}** (الرمز: `{ticker}`)")
 
-            # الرسم البياني
+            # مسار السوق المصري (بيانات لحظية من مباشر)
+            if ticker.endswith(".CA"):
+                st.caption("🇪🇬 جاري سحب الأسعار اللحظية والأخبار من السوق المصري...")
+                with st.spinner('جاري جلب بيانات الجلسة...'):
+                    egx_data = scrape_egx_mubasher(ticker)
+                    
+                    if egx_data and egx_data["price"]:
+                        # عرض السعر اللحظي للسوق المصري
+                        st.metric("السعر اللحظي (مباشر)", egx_data["price"])
+                        news = egx_data["news"]
+                    else:
+                        st.warning("تعذر سحب البيانات اللحظية، سيتم استخدام المصادر البديلة.")
+                        news = get_market_news(name)
+                        
+            # مسار الأسواق الأمريكية والسعودية
+            else:
+                st.caption("🌐 جاري سحب البيانات من الأسواق العالمية...")
+                news = get_market_news(name)
+
+            # الرسم البياني (استخدام YFinance دايماً للرسم لأنه بيجيب تاريخ 6 شهور)
             chart_data = get_stock_chart(ticker)
             if chart_data is not None and not chart_data.empty:
                 st.line_chart(chart_data['Close'], color="#FF4B4B")
-                st.metric("السعر الحالي", round(chart_data['Close'].iloc[-1], 2))
+                # لو السهم مش مصري، نعرض سعر الإغلاق بتاع ياهو فاينانس
+                if not ticker.endswith(".CA"):
+                    st.metric("السعر الحالي (Yahoo)", round(chart_data['Close'].iloc[-1], 2))
             else:
-                st.warning(f"مش لاقي بيانات للرمز {ticker}")
+                st.warning(f"عفواً، لا توجد بيانات تاريخية للرسم البياني لرمز {ticker}")
 
-            # الأخبار والتحليل
-            with st.spinner('جاري التحليل واستخراج البيانات...'):
-                news = get_market_news(name)
+            # التحليل بواسطة الذكاء الاصطناعي
+            with st.spinner('جاري قراءة الأخبار واستخراج التقرير...'):
                 if news:
                     analysis = analyze_stock_news(news, name)
                     st.markdown("### اتفضل التقرير:")
                     display_rtl(analysis)
                     
-                    # === التعديل الأساسي: حفظ التحليل في الذاكرة عشان الموديل يفتكره ===
+                    # حفظ التحليل في الذاكرة
                     st.session_state.messages.append({"role": "assistant", "content": f"تم تحليل سهم {name}:\n\n{analysis}"})
                 else:
                     st.error("مفيش أخبار متاحة حالياً.")
