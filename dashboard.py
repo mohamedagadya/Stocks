@@ -5,7 +5,7 @@ from groq import Groq
 import yfinance as yf
 import json
 from thefuzz import process  
-
+import re
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
 try:
@@ -266,7 +266,7 @@ def get_market_news(query):
         
         detailed_news = []
         # هنكتفي بأهم وأحدث 5 أخبار بس عشان منضربش الـ Token Limit بتاع الموديل وعشان وقت التحميل
-        for item in items[:5]:
+        for item in items[:3]:
             title = item.title.text
             link = item.link.text
             
@@ -285,7 +285,7 @@ def get_market_news(query):
                     content = "التفاصيل غير متاحة بسبب حماية الموقع."
                     
                 # بناخد أول 800 حرف من كل خبر عشان ندي الخلاصة للموديل من غير حشو
-                detailed_news.append(f"عنوان الخبر: {title}\nالتفاصيل: {content[:800]}...\n") 
+                detailed_news.append(f"عنوان الخبر: {title}\nالتفاصيل: {content[:400]}...\n") 
                 
             except Exception as e:
                 # لو حصل مشكلة في الرابط ده، نضيف العنوان بس ونكمل
@@ -295,6 +295,54 @@ def get_market_news(query):
         
     except Exception as e:
         return None
+@st.cache_data(ttl=300) # كاش لمدة 5 دقايق بس عشان نحافظ على تحديث السعر اللحظي
+def scrape_egx_mubasher(ticker):
+    """
+    سكرابر مخصص للسوق المصري بيسحب السعر اللحظي وأحدث الأخبار من مباشر
+    """
+    # التأكد إن السهم مصري أولاً
+    if not ticker.endswith(".CA"):
+        return None
+        
+    # تجهيز رمز السهم للبحث في موقع مباشر
+    symbol = ticker.replace(".CA", "")
+    url = f"https://www.mubasher.info/markets/EGX/stocks/{symbol}"
+    
+    # استخدام User-Agent عشان الموقع ميعملش Block للـ Request
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=8)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # 1. استخراج السعر اللحظي 
+        # (نستخدم Regular Expressions لاصطياد الكلاسات اللي بتحتوي على كلمة price)
+        price_elem = soup.find(class_=re.compile("market-summary__price", re.I))
+        current_price = price_elem.text.strip() if price_elem else None
+        
+        # 2. استخراج أحدث 3 أخبار حصرية للسهم من صفحته مباشرة
+        news_elements = soup.find_all("a", class_=re.compile("article-card__title", re.I))
+        stock_news = []
+        
+        for news in news_elements[:3]:
+            title = news.text.strip()
+            # تجهيز رابط الخبر لو حبينا نعرضه
+            link = "https://www.mubasher.info" + news['href'] if news.has_attr('href') else ""
+            stock_news.append(f"- {title}")
+            
+        news_text = "\n".join(stock_news) if stock_news else "مفيش أخبار حصرية حديثة للسهم ده على مباشر."
+        
+        return {
+            "price": current_price,
+            "news": news_text
+        }
+        
+    except Exception as e:
+        print(f"Scraping Error: {e}")
+        return None
+
 
 def analyze_stock_news(news_text, stock_name):
     client = Groq(api_key=API_KEY)
@@ -390,7 +438,7 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                 ]
                 
                 # تمرير آخر 8 رسائل من الذاكرة للموديل عشان يفهم السياق 
-                for msg in st.session_state.messages[-8:]:
+                for msg in st.session_state.messages[-4:]:
                     chat_messages.append({"role": msg["role"], "content": msg["content"]})
                 
                 try:
@@ -407,7 +455,11 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     st.session_state.messages.append({"role": "assistant", "content": reply})
                     
                 except Exception as e:
-                    st.error(f"حصل خطأ أثناء الدردشة: {str(e)}")
+                    error_msg = str(e)
+                    if "429" in error_msg or "Rate limit" in error_msg:
+                        st.error("(Rate Limit) ")
+                    else:
+                        st.error(f"حصل خطأ أثناء الدردشة: {error_msg}")
                     
         elif decision.get("action") == "error":
             st.error(decision.get("reply"))
