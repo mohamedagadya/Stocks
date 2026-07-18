@@ -254,16 +254,46 @@ def smart_router(messages):
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
-@st.cache_data(ttl=900) # الاحتفاظ بالبيانات في الذاكرة لمدة 15 دقيقة
+@st.cache_data(ttl=900)
 def get_market_news(query):
     url = f"https://news.google.com/rss/search?q={query}&hl=ar&gl=EG&ceid=EG:ar"
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.content, features="xml")
         items = soup.find_all("item")
+        
         if not items: return None
-        return "\n".join([f"- {item.title.text}" for item in items[:200]])
-    except:
+        
+        detailed_news = []
+        # هنكتفي بأهم وأحدث 5 أخبار بس عشان منضربش الـ Token Limit بتاع الموديل وعشان وقت التحميل
+        for item in items[:5]:
+            title = item.title.text
+            link = item.link.text
+            
+            try:
+                # الدخول على رابط المقال نفسه
+                article_resp = requests.get(link, timeout=5)
+                article_soup = BeautifulSoup(article_resp.content, 'html.parser')
+                
+                # سحب النصوص من البراجرافات
+                paragraphs = article_soup.find_all('p')
+                # تجميع النصوص اللي طولها معقول (عشان نتجاهل كلمات زي "حقوق النشر" وغيرها)
+                content = " ".join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 30])
+                
+                # لو ملقيناش محتوى (بعض المواقع بتعمل حماية)، نكتفي بالعنوان
+                if not content:
+                    content = "التفاصيل غير متاحة بسبب حماية الموقع."
+                    
+                # بناخد أول 800 حرف من كل خبر عشان ندي الخلاصة للموديل من غير حشو
+                detailed_news.append(f"عنوان الخبر: {title}\nالتفاصيل: {content[:800]}...\n") 
+                
+            except Exception as e:
+                # لو حصل مشكلة في الرابط ده، نضيف العنوان بس ونكمل
+                detailed_news.append(f"عنوان الخبر: {title}\n")
+                
+        return "\n---\n".join(detailed_news)
+        
+    except Exception as e:
         return None
 
 def analyze_stock_news(news_text, stock_name):
