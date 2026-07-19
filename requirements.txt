@@ -8,3 +8,4 @@ lxml
 plotly
 pandas
 supabase
+hashlib
