@@ -206,16 +206,14 @@ def smart_router(messages):
     
     القواعد الصارمة للرموز (Tickers):
     1. للأسهم المصرية: يجب إضافة ".CA" في النهاية. 
-       - استخدم هذه القائمة المرجعية للأسهم المصرية للوصول للرمز الدقيق:
-         (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
-       - إذا سأل المستخدم عن شركة مصرية غير موجودة بالقائمة، استنتج الرمز الأقرب وأضف .CA.
+       - استخدم هذه القائمة للأسهم المصرية: (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
        
-    2. الأسهم السعودية: يجب إضافة ".SR" (مثال: 2222.SR).
-    3. الأسهم الأمريكية: بدون لاحقة (مثال: AAPL, TSLA).
+    2. الأسهم السعودية: يجب إضافة ".SR".
+    3. الأسهم الأمريكية: بدون لاحقة.
     
     شكل الرد المطلوب (JSON):
-    - إذا كان الطلب تحليل سهم: {"action": "analyze", "ticker": "الرمز", "search_term": "اسم الشركة"}
-    - إذا كان الطلب دردشة أو سؤال عن تحليل سابق: {"action": "chat"}
+    - إذا كان المستخدم يطلب تحليل سهم لأول مرة أو يسأل عن سهم جديد تماماً: {"action": "analyze", "ticker": "الرمز", "search_term": "اسم الشركة"}
+    - إذا كان المستخدم يطرح سؤالاً متابعاً (Follow-up)، أو يطلب شرحاً أو تفصيلاً للمؤشرات الفنية، أو يناقش تقريراً تم إصداره بالفعل في المحادثة الحالية: {"action": "chat"}
     """
     
     # نجهز الرسايل ونحط الـ System Prompt في الأول
@@ -548,7 +546,7 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     st.error("مفيش أخبار متاحة حالياً.")
 
         elif decision.get("action") == "chat":
-            with st.spinner('جاري الرد...'):
+            with st.spinner('جاري  الرد...'):
                 # لو بيتكلم دردشة عامة ومفيش غرفة، نكريت واحدة
                 if not st.session_state.current_session_id:
                     new_sess = create_new_session(st.session_state.user_id, "GENERAL", "دردشة عامة")
@@ -556,15 +554,21 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     save_chat_message(new_sess, "user", prompt)
 
                 client = Groq(api_key=API_KEY)
-                chat_messages = [{"role": "system", "content": "أنت مساعد مالي ذكي. جاوب على أسئلة المستخدم بناءً على السياق."}]
-                for msg in st.session_state.messages[-4:]:
+                
+                # تحديث شخصية الموديل عشان يكون أعمق في الشرح المالي والرياضي
+                chat_messages = [
+                    {"role": "system", "content": "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."}
+                ]
+                
+                # زيادة الذاكرة لآخر 10 رسائل عشان يقرأ التقرير الأساسي اللي تم إنتاجه في أول الجلسة
+                for msg in st.session_state.messages[-10:]:
                     chat_messages.append({"role": msg["role"], "content": msg["content"]})
                 
                 try:
                     chat_completion = client.chat.completions.create(
                         model="llama-3.1-8b-instant",
                         messages=chat_messages,
-                        temperature=0.5
+                        temperature=0.4 # تقليل الحرارة لضمان الدقة في الشرح والبعد عن الهلوسة
                     )
                     reply = chat_completion.choices[0].message.content
                     st.markdown(reply)
