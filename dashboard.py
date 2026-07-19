@@ -231,23 +231,48 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
 def get_stock_chart(ticker):
     try:
         stock = yf.Ticker(ticker)
-        hist = stock.history(period="6mo")
+        # سحب بيانات سنة بدل 6 شهور عشان حسابات المتوسطات الطويلة تكون أدق
+        hist = stock.history(period="1y") 
         
         if hist.empty:
             return None
             
-        # حساب المتوسطات المتحركة (Moving Averages)
+        # 1. المتوسطات المتحركة البسيطة (SMA)
         hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
         hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
         
-        # حساب مؤشر القوة النسبية (RSI 14)
+        # 2. المتوسطات المتحركة الأسية (EMA) - أسرع في الاستجابة
+        hist['EMA_9'] = hist['Close'].ewm(span=9, adjust=False).mean()
+        hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
+        
+        # 3. مؤشر القوة النسبية (RSI 14)
         delta = hist['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         hist['RSI_14'] = 100 - (100 / (1 + rs))
         
-        return hist
+        # 4. مؤشر الماكد (MACD) - لقياس الزخم وتأكيد الاتجاه
+        ema_12 = hist['Close'].ewm(span=12, adjust=False).mean()
+        ema_26 = hist['Close'].ewm(span=26, adjust=False).mean()
+        hist['MACD'] = ema_12 - ema_26
+        hist['MACD_Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
+        
+        # 5. بولينجر باندز (Bollinger Bands) - لقياس التذبذب والانفجار السعري
+        std = hist['Close'].rolling(window=20).std()
+        hist['BB_Upper'] = hist['SMA_20'] + (std * 2)
+        hist['BB_Lower'] = hist['SMA_20'] - (std * 2)
+        
+        # 6. متوسط المدى الحقيقي (ATR) - لقياس معدل المخاطرة وحركة السهم اليومية
+        high_low = hist['High'] - hist['Low']
+        high_close = (hist['High'] - hist['Close'].shift()).abs()
+        low_close = (hist['Low'] - hist['Close'].shift()).abs()
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        hist['ATR_14'] = true_range.rolling(14).mean()
+        
+        # نرجع بآخر 6 شهور بس للرسم البياني عشان الشاشة متكونش زحمة
+        return hist.tail(130) # حوالي 6 شهور تداول
     except:
         return None
 
@@ -353,30 +378,53 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
 
             # الرسم البياني (استخدام YFinance دايماً للرسم لأنه بيجيب تاريخ 6 شهور)
             # الرسم البياني والمؤشرات الفنية
+            # الرسم البياني والمؤشرات الفنية الشاملة
             chart_data = get_stock_chart(ticker)
-            tech_text = "" # نص المؤشرات اللي هيروح للموديل
+            tech_text = "" 
             
             if chart_data is not None and not chart_data.empty:
                 st.line_chart(chart_data['Close'], color="#FF4B4B")
                 
                 # استخراج أحدث قيم للمؤشرات
-                latest_close = chart_data['Close'].iloc[-1]
-                latest_sma20 = chart_data['SMA_20'].iloc[-1]
-                latest_sma50 = chart_data['SMA_50'].iloc[-1]
-                latest_rsi = chart_data['RSI_14'].iloc[-1]
+                latest = chart_data.iloc[-1]
                 
-                # عرض المؤشرات في أعمدة منظمة
-                cols = st.columns(4)
-                cols[0].metric("السعر الحالي", f"{latest_close:.2f}")
+                # تنظيم العرض في 3 صفوف
+                st.markdown("#### 📊 المؤشرات الفنية اللحظية")
                 
-                # التأكد إن القيم مش NaN قبل عرضها
-                if pd.notna(latest_rsi):
-                    cols[1].metric("RSI (14)", f"{latest_rsi:.2f}")
-                    cols[2].metric("SMA 20", f"{latest_sma20:.2f}")
-                    cols[3].metric("SMA 50", f"{latest_sma50:.2f}")
+                # الصف الأول: السعر، RSI، الماكد، المخاطرة
+                cols1 = st.columns(4)
+                cols1[0].metric("السعر الحالي", f"{latest['Close']:.2f}")
+                
+                if pd.notna(latest['RSI_14']):
+                    cols1[1].metric("RSI (القوة النسبية)", f"{latest['RSI_14']:.2f}")
                     
-                    # تجهيز النص الفني للذكاء الاصطناعي
-                    tech_text = f"البيانات الفنية الحالية:\n- السعر: {latest_close:.2f}\n- مؤشر القوة النسبية (RSI): {latest_rsi:.2f}\n- متوسط متحرك 20 يوم: {latest_sma20:.2f}\n- متوسط متحرك 50 يوم: {latest_sma50:.2f}"
+                    # حالة الماكد (إيجابي لو الخط الأساسي فوق الإشارة)
+                    macd_status = "إيجابي 🟢" if latest['MACD'] > latest['MACD_Signal'] else "سلبي 🔴"
+                    cols1[2].metric("MACD (الزخم)", macd_status)
+                    cols1[3].metric("ATR (معدل التذبذب)", f"{latest['ATR_14']:.2f}")
+                    
+                    # الصف الثاني: المتوسطات المتحركة
+                    cols2 = st.columns(4)
+                    cols2[0].metric("EMA 9 (سريع)", f"{latest['EMA_9']:.2f}")
+                    cols2[1].metric("SMA 20 (قصير)", f"{latest['SMA_20']:.2f}")
+                    cols2[2].metric("SMA 50 (متوسط)", f"{latest['SMA_50']:.2f}")
+                    
+                    # حالة السعر مع بولينجر باندز
+                    bb_status = "اختراق علوي 🔥" if latest['Close'] > latest['BB_Upper'] else ("كسر سفلي ❄️" if latest['Close'] < latest['BB_Lower'] else "مستقر ⚖️")
+                    cols2[3].metric("Bollinger Bands", bb_status)
+
+                    # تجهيز التقرير الفني الشامل للذكاء الاصطناعي
+                    tech_text = f"""
+                    البيانات الفنية الحالية الدقيقة للسهم:
+                    - إغلاق السعر: {latest['Close']:.2f}
+                    - مؤشر القوة النسبية (RSI): {latest['RSI_14']:.2f} (فوق 70 تشبع شرائي، تحت 30 تشبع بيعي).
+                    - مؤشر الماكد (MACD): {latest['MACD']:.2f} وخط الإشارة: {latest['MACD_Signal']:.2f} (الحالة: {macd_status}).
+                    - المتوسطات السريعة والبطيئة: EMA9 ({latest['EMA_9']:.2f})، SMA20 ({latest['SMA_20']:.2f})، SMA50 ({latest['SMA_50']:.2f}).
+                    - نطاق بولينجر: الحد العلوي ({latest['BB_Upper']:.2f})، الحد السفلي ({latest['BB_Lower']:.2f}).
+                    - معدل التذبذب (ATR): {latest['ATR_14']:.2f}.
+                    
+                    بناءً على هذه الأرقام، قم بدمج الرؤية الفنية مع الأخبار الأساسية لتقديم توصية متكاملة.
+                    """
             else:
                 st.warning(f"عفواً، لا توجد بيانات تاريخية للرسم البياني لرمز {ticker}")
 
