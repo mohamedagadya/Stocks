@@ -8,9 +8,9 @@ from thefuzz import process
 import re
 import pandas as pd
 from supabase import create_client, Client
+import hashlib
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
-# إخفاء القائمة العلوية والفوتر الخاص بـ Streamlit
 hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -31,6 +31,77 @@ try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.warning("حدث خطأ في الاتصال بقاعدة البيانالت.")
+    st.stop()
+
+# ==========================================
+# نظام الحسابات والبوابة الأمنية (Authentication)
+# ==========================================
+
+# دالة بسيطة لتشفير الباسورد
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# التحقق: لو اليوزر مش مسجل دخول، اعرضله شاشة الدخول ووقف الكود
+if "user_id" not in st.session_state:
+    st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>مرحباً بك في BOLD 📈</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #888;'>المنصة الذكية لتحليل الأسواق المالية</p>", unsafe_allow_html=True)
+    st.divider()
+    
+    # تقسيم الشاشة لتبويبات (تسجيل دخول / إنشاء حساب)
+    tab1, tab2 = st.tabs(["تسجيل الدخول", "إنشاء حساب جديد"])
+    
+    with tab1:
+        st.subheader("تسجيل الدخول")
+        login_user = st.text_input("اسم المستخدم", key="login_user")
+        login_pass = st.text_input("كلمة المرور", type="password", key="login_pass")
+        
+        if st.button("دخول", use_container_width=True):
+            if login_user and login_pass:
+                hashed_pass = hash_password(login_pass)
+                try:
+                    # البحث عن المستخدم في قاعدة البيانات السحابية
+                    response = supabase.table("app_users").select("*").eq("username", login_user).eq("password", hashed_pass).execute()
+                    users = response.data
+                    
+                    if users and len(users) > 0:
+                        # حفظ بيانات المستخدم في الذاكرة المؤقتة
+                        st.session_state.user_id = users[0]['id']
+                        st.session_state.username = users[0]['username']
+                        st.success("تم تسجيل الدخول بنجاح!   ...")
+                        st.rerun() # عمل ريفرش للصفحة عشان تقرأ باقي الكود
+                    else:
+                        st.error("اسم المستخدم أو كلمة المرور غير صحيحة.")
+                except Exception as e:
+                    st.error(f"حدث خطأ في الاتصال: {e}")
+            else:
+                st.warning("يرجى إدخال اسم المستخدم وكلمة المرور.")
+
+    with tab2:
+        st.subheader("إنشاء حساب جديد")
+        reg_user = st.text_input("اسم المستخدم", key="reg_user")
+        reg_pass = st.text_input("كلمة المرور", type="password", key="reg_pass")
+        reg_pass_confirm = st.text_input("تأكيد كلمة المرور", type="password", key="reg_pass_confirm")
+        
+        if st.button("إنشاء حساب", use_container_width=True):
+            if reg_user and reg_pass and reg_pass_confirm:
+                if reg_pass == reg_pass_confirm:
+                    hashed_pass = hash_password(reg_pass)
+                    try:
+                        # إدخال المستخدم الجديد في قاعدة البيانات
+                        supabase.table("app_users").insert({"username": reg_user, "password": hashed_pass}).execute()
+                        st.success("تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول من التبويب الأول.")
+                    except Exception as e:
+                        # اصطياد خطأ تكرار الاسم (لأننا عاملين unique في الداتا بيز)
+                        if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "23505" in str(e):
+                            st.error("اسم المستخدم مسجل بالفعل، يرجى اختيار اسم آخر.")
+                        else:
+                            st.error(f"حدث خطأ أثناء إنشاء الحساب: {e}")
+                else:
+                    st.error("كلمات المرور غير متطابقة.")
+            else:
+                st.warning("يرجى تعبئة جميع الحقول.")
+                
+    # الأمر ده هو الحارس: بيمنع قراءة باقي الأبلكيشن لو اليوزر مش مسجل دخول
     st.stop()
 
 
@@ -290,6 +361,16 @@ def get_stock_chart(ticker):
 # ---------------------------------------------------------
 # (DCA Calculator - Sidebar)
 with st.sidebar:
+
+    st.write(f"👤 مرحباً بك، **{st.session_state.username}**")
+    if st.button("تسجيل خروج", use_container_width=True, type="primary"):
+        st.session_state.clear() # مسح بيانات اليوزر من الذاكرة
+        st.rerun() # ريفرش عشان يرجعه لشاشة تسجيل الدخول
+    
+    st.divider()
+    
+    st.header("🧮 حاسبة الاستثمار التراكمي (DCA)")
+    # ... باقي كود الحاسبة بتاعك زي ما هو ...
     st.header("🧮 حاسبة الاستثمار التراكمي (DCA)")
     st.write("احسب متوسط سعرك بعد ضخ مبلغ الشراء الجديد.")
     
