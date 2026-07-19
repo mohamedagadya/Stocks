@@ -43,7 +43,7 @@ def hash_password(password):
 
 # التحقق: لو اليوزر مش مسجل دخول، اعرضله شاشة الدخول ووقف الكود
 if "user_id" not in st.session_state:
-    st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>مرحباً بك في BOLD 📈</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>مرحباً بك في BOLD </h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #888;'>المنصة الذكية لتحليل الأسواق المالية</p>", unsafe_allow_html=True)
     st.divider()
     
@@ -131,6 +131,45 @@ def get_ticker_from_db(search_term):
     except Exception as e:
         st.error(f"حصل خطأ في الاتصال بقاعدة البيانات: {e}")
         return None, None
+
+# ==========================================
+# إدارة غرف المحادثة (Chat Sessions)
+# ==========================================
+def fetch_user_sessions(user_id):
+    try:
+        res = supabase.table("chat_sessions").select("id, session_title").eq("user_id", user_id).order("created_at", desc=True).execute()
+        return res.data
+    except:
+        return []
+
+def fetch_messages(session_id):
+    try:
+        res = supabase.table("chat_messages").select("role, content").eq("session_id", session_id).order("created_at").execute()
+        return res.data
+    except:
+        return []
+
+def create_new_session(user_id, ticker, title):
+    try:
+        res = supabase.table("chat_sessions").insert({
+            "user_id": user_id, 
+            "ticker": ticker, 
+            "session_title": title
+        }).execute()
+        return res.data[0]['id']
+    except:
+        return None
+
+def save_chat_message(session_id, role, content):
+    if session_id:
+        try:
+            supabase.table("chat_messages").insert({
+                "session_id": session_id, 
+                "role": role, 
+                "content": content
+            }).execute()
+        except:
+            pass
 
 
 
@@ -359,73 +398,81 @@ def get_stock_chart(ticker):
 
 
 # ---------------------------------------------------------
-# (DCA Calculator - Sidebar)
+# ---------------------------------------------------------
+# Sidebar
 with st.sidebar:
-
     st.write(f"👤 مرحباً بك، **{st.session_state.username}**")
     if st.button("تسجيل خروج", use_container_width=True, type="primary"):
-        st.session_state.clear() # مسح بيانات اليوزر من الذاكرة
-        st.rerun() # ريفرش عشان يرجعه لشاشة تسجيل الدخول
+        st.session_state.clear()
+        st.rerun()
     
     st.divider()
     
-    st.header("🧮 حاسبة الاستثمار التراكمي (DCA)")
-    # ... باقي كود الحاسبة بتاعك زي ما هو ...
-    st.header("🧮 حاسبة الاستثمار التراكمي (DCA)")
+    # --- قسم غرف المحادثة ---
+    st.header("💬 محادثاتي السابقة")
+    
+    # زرار لفتح شات جديد أبيض
+    if st.button("➕ تحليل سهم جديد", use_container_width=True):
+        st.session_state.current_session_id = None
+        st.session_state.messages = []
+        st.rerun()
+        
+    # عرض الغرف المحفوظة في الداتا بيز
+    user_sessions = fetch_user_sessions(st.session_state.user_id)
+    for sess in user_sessions:
+        if st.button(f"📊 {sess['session_title']}", key=f"session_{sess['id']}", use_container_width=True):
+            # لو ضغط على غرفة، نحمل رسايلها
+            st.session_state.current_session_id = sess['id']
+            db_msgs = fetch_messages(sess['id'])
+            st.session_state.messages = [{"role": msg["role"], "content": msg["content"]} for msg in db_msgs]
+            st.rerun()
+
+    st.divider()
+    
+    # --- حاسبة الاستثمار التراكمي (DCA) ---
+    st.header("🧮 حاسبة الاستثمار (DCA)")
     st.write("احسب متوسط سعرك بعد ضخ مبلغ الشراء الجديد.")
-    
-    st.divider()
-    
-    # 1. بيانات المحفظة الحالية
-    st.subheader("وضعك الحالي")
     owned_shares = st.number_input("عدد الأسهم اللي معاك حالياً", min_value=0.0, value=0.0, step=1.0)
     average_price = st.number_input("متوسط السعر الحالي", min_value=0.0, value=0.0, step=1.0)
-    
-    st.divider()
-    
-    # 2. تفاصيل الشراء الجديد
-    st.subheader("الشراء الجديد")
     new_investment = st.number_input("المبلغ اللي هتستثمره", min_value=0.0, value=500.0, step=100.0)
     current_market_price = st.number_input("سعر السهم الحالي على الشاشة", min_value=1.0, value=50.0, step=1.0)
     
     if st.button("احسب المتوسط الجديد", use_container_width=True):
         if current_market_price > 0:
-            # العمليات الحسابية
             current_total_value = owned_shares * average_price
             new_shares_bought = new_investment / current_market_price
-            
             total_shares = owned_shares + new_shares_bought
             total_invested = current_total_value + new_investment
+            new_average = total_invested / total_shares if total_shares > 0 else 0.0
             
-            # تجنب القسمة على صفر
-            if total_shares > 0:
-                new_average = total_invested / total_shares
-            else:
-                new_average = 0.0
-            
-            # عرض النتائج بشكل منظم
             st.success(f" متوسط السعر الجديد: **{new_average:.2f}**")
-            st.info(f" إجمالي الأسهم بعد الشراء: **{total_shares:.2f}** سهم")
-            st.info(f" إجمالي التكلفة المدفوعة: **{total_invested:.2f}**")
+            st.info(f" إجمالي الأسهم: **{total_shares:.2f}**")
+            st.info(f" إجمالي التكلفة: **{total_invested:.2f}**")
         else:
             st.error("سعر السوق لا يمكن أن يكون صفراً.")
-
+# Interface
 # Interface
 st.title("BOLD")
-st.caption("Write a company")
+st.caption("المنصة الذكية لتحليل الأسواق المالية")
 
+# تعريف الذاكرة المبدئية
 if "messages" not in st.session_state: 
     st.session_state.messages = []
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = None
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن التحليل..."):
-    # إضافة رسالة المستخدم للتاريخ
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
+
+    # لو إحنا فاتحين غرفة قديمة، نحفظ سؤالك في الداتا بيز فوراً
+    if st.session_state.current_session_id:
+        save_chat_message(st.session_state.current_session_id, "user", prompt)
 
     with st.chat_message("assistant"):
         with st.spinner('جاري العمل...'):
@@ -433,77 +480,54 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
             
         if decision.get("action") == "analyze":
             search_term = decision.get("search_term")
-            
-            # سحب الرمز الدقيق من قاعدة البيانات السحابية
             db_ticker, db_name = get_ticker_from_db(search_term)
-            
-            if db_ticker:
-                ticker = db_ticker
-                name = db_name
-                st.info(f"🤖 تم استخراج السهم بنجاح من قاعدة البيانات: **{name}** (الرمز: `{ticker}`)")
-            else:
-                # خطة بديلة لو السهم مش متسجل لسه
-                ticker = decision.get("ticker")
-                name = search_term
-                st.info(f"🤖 تم استنتاج السهم بواسطة الذكاء الاصطناعي: **{name}** (الرمز: `{ticker}`)")
+            ticker = db_ticker if db_ticker else decision.get("ticker")
+            name = db_name if db_ticker else search_term
 
-            # مسار السوق المصري (بيانات لحظية من مباشر)
+            # لو دي أول رسالة ومفيش غرفة، نكريت الغرفة باسم السهم
+            if not st.session_state.current_session_id:
+                new_sess = create_new_session(st.session_state.user_id, ticker, f"تحليل {name}")
+                st.session_state.current_session_id = new_sess
+                save_chat_message(new_sess, "user", prompt)
+
+            # ... مسار السوق المصري والعالمي (نفس الكود القديم) ...
             if ticker.endswith(".CA"):
                 st.caption("🇪🇬 جاري سحب الأسعار اللحظية والأخبار من السوق المصري...")
                 with st.spinner('جاري جلب بيانات الجلسة...'):
                     egx_data = scrape_egx_mubasher(ticker)
-                    
                     if egx_data and egx_data["price"]:
-                        # عرض السعر اللحظي للسوق المصري
                         st.metric("السعر اللحظي (مباشر)", egx_data["price"])
                         news = egx_data["news"]
                     else:
                         st.warning("تعذر سحب البيانات اللحظية، سيتم استخدام المصادر البديلة.")
                         news = get_market_news(name)
-                        
-            # مسار الأسواق الأمريكية والسعودية
             else:
                 st.caption("🌐 جاري سحب البيانات من الأسواق العالمية...")
                 news = get_market_news(name)
 
-            # الرسم البياني (استخدام YFinance دايماً للرسم لأنه بيجيب تاريخ 6 شهور)
-            # الرسم البياني والمؤشرات الفنية
-            # الرسم البياني والمؤشرات الفنية الشاملة
             chart_data = get_stock_chart(ticker)
             tech_text = "" 
             
             if chart_data is not None and not chart_data.empty:
                 st.line_chart(chart_data['Close'], color="#FF4B4B")
-                
-                # استخراج أحدث قيم للمؤشرات
                 latest = chart_data.iloc[-1]
-                
-                # تنظيم العرض في 3 صفوف
                 st.markdown("#### 📊 المؤشرات الفنية اللحظية")
-                
-                # الصف الأول: السعر، RSI، الماكد، المخاطرة
                 cols1 = st.columns(4)
                 cols1[0].metric("السعر الحالي", f"{latest['Close']:.2f}")
                 
                 if pd.notna(latest['RSI_14']):
                     cols1[1].metric("RSI (القوة النسبية)", f"{latest['RSI_14']:.2f}")
-                    
-                    # حالة الماكد (إيجابي لو الخط الأساسي فوق الإشارة)
                     macd_status = "إيجابي 🟢" if latest['MACD'] > latest['MACD_Signal'] else "سلبي 🔴"
                     cols1[2].metric("MACD (الزخم)", macd_status)
                     cols1[3].metric("ATR (معدل التذبذب)", f"{latest['ATR_14']:.2f}")
                     
-                    # الصف الثاني: المتوسطات المتحركة
                     cols2 = st.columns(4)
                     cols2[0].metric("EMA 9 (سريع)", f"{latest['EMA_9']:.2f}")
                     cols2[1].metric("SMA 20 (قصير)", f"{latest['SMA_20']:.2f}")
                     cols2[2].metric("SMA 50 (متوسط)", f"{latest['SMA_50']:.2f}")
-                    
-                    # حالة السعر مع بولينجر باندز
                     bb_status = "اختراق علوي 🔥" if latest['Close'] > latest['BB_Upper'] else ("كسر سفلي ❄️" if latest['Close'] < latest['BB_Lower'] else "مستقر ⚖️")
                     cols2[3].metric("Bollinger Bands", bb_status)
 
-                    # تجهيز التقرير الفني الشامل للذكاء الاصطناعي
                     tech_text = f"""
                     البيانات الفنية الحالية الدقيقة للسهم:
                     - إغلاق السعر: {latest['Close']:.2f}
@@ -512,57 +536,55 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     - المتوسطات السريعة والبطيئة: EMA9 ({latest['EMA_9']:.2f})، SMA20 ({latest['SMA_20']:.2f})، SMA50 ({latest['SMA_50']:.2f}).
                     - نطاق بولينجر: الحد العلوي ({latest['BB_Upper']:.2f})، الحد السفلي ({latest['BB_Lower']:.2f}).
                     - معدل التذبذب (ATR): {latest['ATR_14']:.2f}.
-                    
                     بناءً على هذه الأرقام، قم بدمج الرؤية الفنية مع الأخبار الأساسية لتقديم توصية متكاملة.
                     """
             else:
                 st.warning(f"عفواً، لا توجد بيانات تاريخية للرسم البياني لرمز {ticker}")
 
-            # التحليل بواسطة الذكاء الاصطناعي
             with st.spinner('جاري قراءة الأخبار والبيانات الفنية لاستخراج التقرير...'):
                 if news:
-                    # تمرير الأخبار مع البيانات الفنية
                     analysis = analyze_stock_news(news, name, tech_text)
                     st.markdown("### اتفضل التقرير:")
                     display_rtl(analysis)
                     
-                    # حفظ التحليل في الذاكرة
-                    st.session_state.messages.append({"role": "assistant", "content": f"تم تحليل سهم {name}:\n\n{analysis}"})
+                    # حفظ رد الموديل في الذاكرة وفي الداتا بيز
+                    assistant_reply = f"تم تحليل سهم {name}:\n\n{analysis}"
+                    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
+                    save_chat_message(st.session_state.current_session_id, "assistant", assistant_reply)
                 else:
                     st.error("مفيش أخبار متاحة حالياً.")
 
         elif decision.get("action") == "chat":
             with st.spinner('جاري الرد...'):
+                # لو بيتكلم دردشة عامة ومفيش غرفة، نكريت واحدة
+                if not st.session_state.current_session_id:
+                    new_sess = create_new_session(st.session_state.user_id, "GENERAL", "دردشة عامة")
+                    st.session_state.current_session_id = new_sess
+                    save_chat_message(new_sess, "user", prompt)
+
                 client = Groq(api_key=API_KEY)
-                
-                # بناء سياق المحادثة المخصص للدردشة
-                chat_messages = [
-                    {"role": "system", "content": "أنت مساعد مالي ذكي ومحترف. مهمتك الإجابة على استفسارات المستخدم ومناقشته بناءً على سياق المحادثة السابق. إذا سألك عن شركة قمت بتحليلها سابقاً، استخدم هذا التحليل للرد بعمق."}
-                ]
-                
-                # تمرير آخر 4 رسائل من الذاكرة للموديل عشان يفهم السياق 
+                chat_messages = [{"role": "system", "content": "أنت مساعد مالي ذكي. جاوب على أسئلة المستخدم بناءً على السياق."}]
                 for msg in st.session_state.messages[-4:]:
                     chat_messages.append({"role": msg["role"], "content": msg["content"]})
                 
                 try:
-                    # التعديل هنا: استخدام موديل llama-3.1-8b-instant لتجنب الـ Rate Limit
                     chat_completion = client.chat.completions.create(
                         model="llama-3.1-8b-instant",
                         messages=chat_messages,
                         temperature=0.5
                     )
                     reply = chat_completion.choices[0].message.content
-                    
-                    # عرض الرد وحفظه
                     st.markdown(reply)
+                    
+                    # حفظ في الذاكرة والداتا بيز
                     st.session_state.messages.append({"role": "assistant", "content": reply})
+                    save_chat_message(st.session_state.current_session_id, "assistant", reply)
                     
                 except Exception as e:
-                    error_msg = str(e)
-                    if "429" in error_msg or "Rate limit" in error_msg:
-                        st.error("(Rate Limit)")
+                    if "429" in str(e) or "Rate limit" in str(e):
+                        st.error("انتهت الباقة المجانية مؤقتاً (Rate Limit).")
                     else:
-                        st.error(f"حصل خطأ أثناء الدردشة: {error_msg}")
+                        st.error(f"حصل خطأ أثناء الدردشة: {str(e)}")
                     
         elif decision.get("action") == "error":
             st.error(decision.get("reply"))
