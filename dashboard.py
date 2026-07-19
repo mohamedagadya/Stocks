@@ -10,6 +10,15 @@ import pandas as pd
 from supabase import create_client, Client
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
+# إخفاء القائمة العلوية والفوتر الخاص بـ Streamlit
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 try:
     API_KEY = st.secrets["GROQ_API_KEY"]
 except:
