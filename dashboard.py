@@ -253,52 +253,36 @@ def get_market_news(query):
         
     except Exception as e:
         return None
-@st.cache_data(ttl=300) # كاش لمدة 5 دقايق بس عشان نحافظ على تحديث السعر اللحظي
-def scrape_egx_mubasher(ticker):
+@st.cache_data(ttl=300) 
+def scrape_egx_google_finance(ticker):
     """
-    سكرابر مخصص للسوق المصري بيسحب السعر اللحظي وأحدث الأخبار من مباشر
+    سكرابر بيسحب السعر اللحظي من Google Finance للسوق المصري
     """
-    # التأكد إن السهم مصري أولاً
     if not ticker.endswith(".CA"):
         return None
         
-    # تجهيز رمز السهم للبحث في موقع مباشر
     symbol = ticker.replace(".CA", "")
-    url = f"https://www.mubasher.info/markets/EGX/stocks/{symbol}"
+    # رمز البورصة المصرية في جوجل فاينانس هو CAI
+    url = f"https://www.google.com/finance/quote/{symbol}:CAI"
     
-    # استخدام User-Agent عشان الموقع ميعملش Block للـ Request
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
     try:
         response = requests.get(url, headers=headers, timeout=8)
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 1. استخراج السعر اللحظي 
-        # (نستخدم Regular Expressions لاصطياد الكلاسات اللي بتحتوي على كلمة price)
-        price_elem = soup.find(class_=re.compile("market-summary__price", re.I))
+        # كلاس السعر اللحظي في جوجل فاينانس
+        price_elem = soup.find("div", class_="YMlKec fxKbKc")
         current_price = price_elem.text.strip() if price_elem else None
         
-        # 2. استخراج أحدث 3 أخبار حصرية للسهم من صفحته مباشرة
-        news_elements = soup.find_all("a", class_=re.compile("article-card__title", re.I))
-        stock_news = []
-        
-        for news in news_elements[:3]:
-            title = news.text.strip()
-            # تجهيز رابط الخبر لو حبينا نعرضه
-            link = "https://www.mubasher.info" + news['href'] if news.has_attr('href') else ""
-            stock_news.append(f"- {title}")
-            
-        news_text = "\n".join(stock_news) if stock_news else "مفيش أخبار حصرية حديثة للسهم ده على مباشر."
-        
         return {
-            "price": current_price,
-            "news": news_text
+            "price": current_price
         }
         
     except Exception as e:
-        print(f"Scraping Error: {e}")
+        print(f"Google Finance Scraping Error: {e}")
         return None
 
 
@@ -482,16 +466,20 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                 save_chat_message(new_sess, "user", prompt)
 
             # ... مسار السوق المصري والعالمي (نفس الكود القديم) ...
+            # مسار السوق المصري (بيانات لحظية من جوجل فاينانس)
             if ticker.endswith(".CA"):
-                st.caption("🇪🇬 جاري سحب الأسعار اللحظية والأخبار من السوق المصري...")
+                st.caption("🇪🇬 جاري سحب الأسعار اللحظية من جوجل فاينانس...")
                 with st.spinner('جاري جلب بيانات الجلسة...'):
-                    egx_data = scrape_egx_mubasher(ticker)
+                    egx_data = scrape_egx_google_finance(ticker)
+                    
                     if egx_data and egx_data["price"]:
-                        st.metric("السعر اللحظي (مباشر)", egx_data["price"])
-                        news = egx_data["news"]
+                        # عرض السعر اللحظي للسوق المصري
+                        st.metric("السعر اللحظي (جوجل فاينانس)", egx_data["price"])
                     else:
                         st.warning("تعذر سحب البيانات اللحظية، سيتم استخدام المصادر البديلة.")
-                        news = get_market_news(name)
+                    
+                    # سحب الأخبار دايماً من محرك RSS الخاص بجوجل نيوز
+                    news = get_market_news(name)
             else:
                 st.caption("🌐 جاري سحب البيانات من الأسواق العالمية...")
                 news = get_market_news(name)
