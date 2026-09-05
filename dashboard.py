@@ -1,7 +1,8 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import yfinance as yf
 import json
 from thefuzz import process  
@@ -15,10 +16,13 @@ st.set_page_config(page_title="Bold", page_icon="📈", layout="wide")
 
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=API_KEY)
+    client = genai.Client(api_key=API_KEY)
 except Exception:
     st.warning("مطلوب مفتاح GEMINI_API_KEY في st.secrets للعمل.")
     st.stop()
+
+# اسم الموديل الأحدث المستقر
+MODEL_NAME = "gemini-2.5-flash"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -158,34 +162,33 @@ def display_rtl(text):
     )
 
 # ---------------------------------------------------------
-# الموجه الذكي (Router) باستخدام Gemini
+# الموجه الذكي (Router) باستخدام Gemini SDK الجديد
 # ---------------------------------------------------------
 def smart_router(messages):
     system_prompt = """
     أنت نظام توجيه ذكي (Router). مهمتك قراءة المحادثة وتحديد نية المستخدم في رسالته الأخيرة فقط بدقة.
-    هام جداً: يجب أن يكون الرد بصيغة JSON فقط.
+    هام جداً: يجب أن يكون الرد بصيغة JSON فقط كالتالي:
+    {"action": "analyze", "ticker": "...", "search_term": "..."} أو {"action": "chat"}
     
     القواعد الصارمة للرموز (Tickers):
     1. للأسهم المصرية: يجب إضافة ".CA" في النهاية. 
        - أمثلة: (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
-       
     2. الأسهم السعودية: يجب إضافة ".SR".
     3. الأسهم الأمريكية: بدون لاحقة.
-    
-    شكل الرد المطلوب (JSON):
-    - إذا كان المستخدم يطلب تحليل سهم لأول مرة أو يسأل عن سهم جديد تماماً: {"action": "analyze", "ticker": "الرمز", "search_term": "اسم الشركة"}
-    - إذا كان المستخدم يطرح سؤالاً متابعاً (Follow-up)، أو يطلب شرحاً للمؤشرات، أو يناقش تحليلاً سابقاً: {"action": "chat"}
     """
     
     conversation_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages[-4:]])
     prompt = f"{system_prompt}\n\nالمحادثة الأخيرة:\n{conversation_context}"
     
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"response_mime_type": "application/json", "temperature": 0}
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0
+            )
         )
-        response = model.generate_content(prompt)
         return json.loads(response.text)
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
@@ -223,7 +226,6 @@ def scrape_egx_google_finance(ticker):
     except Exception:
         return None
 
-# Caching لمدة نصف ساعة لتوفير استدعاءات النموذج
 @st.cache_data(ttl=1800)
 def analyze_stock_news(news_text, stock_name, tech_data=""):
     system_prompt = """
@@ -235,17 +237,20 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
     - اسرد أهم الأخبار المؤثرة.
     - قيم مستوى المخاطرة وقدم رؤية استثمارية موضوعية.
     
-    ⚠️ تحذير صارم: إذا لم يتم تزويدك ببيانات "المؤشرات الفنية" صراحةً في الرسالة، يُمنع منعاً باتاً اختراع أو استنتاج أي أرقام لمؤشرات فنية. اكتفِ بتحليل الأخبار واذكر بوضوح أن البيانات الفنية غير متاحة مؤقتاً.
+    ⚠️ تحذير صارم: إذا لم يتم تزويدك ببيانات "المؤشرات الفنية" صراحةً في الرسالة، يُمنع منعاً باتاً اختراع أي أرقام لمؤشرات فنية. اكتفِ بتحليل الأخبار واذكر بوضوح أن البيانات الفنية غير متاحة مؤقتاً.
     """
     
-    prompt = f"{system_prompt}\n\nالسهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
+    prompt = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"temperature": 0.3}
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.3
+            )
         )
-        response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"حدث خطأ أثناء التحليل: {str(e)}"
@@ -446,20 +451,19 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
 
                 system_instruction = "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."
 
-                # تنسيق سجل الشات لمكتبة Gemini الرسمية
-                chat_history = []
-                for msg in st.session_state.messages[-10:]:
-                    role = "user" if msg["role"] == "user" else "model"
-                    chat_history.append({"role": role, "parts": [msg["content"]]})
+                # تجميع المحادثة السابقة
+                history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-10:]])
+                prompt_full = f"{history_text}\nassistant:"
 
                 try:
-                    model = genai.GenerativeModel(
-                        model_name="gemini-1.5-flash",
-                        system_instruction=system_instruction,
-                        generation_config={"temperature": 0.4}
+                    response = client.models.generate_content(
+                        model=MODEL_NAME,
+                        contents=prompt_full,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            temperature=0.4
+                        )
                     )
-                    chat = model.start_chat(history=chat_history[:-1])
-                    response = chat.send_message(st.session_state.messages[-1]["content"])
                     reply = response.text
                     st.markdown(reply)
                     
