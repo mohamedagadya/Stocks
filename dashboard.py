@@ -21,8 +21,8 @@ except Exception:
     st.warning("مطلوب مفتاح GEMINI_API_KEY في st.secrets للعمل.")
     st.stop()
 
-# تحديد أحدث موديل فلاش فائق السرعة
-MODEL_NAME = "gemini-2.5-flash"
+# تحديد الموديل المطلوب
+MODEL_NAME = "gemini-3.6-flash"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
