@@ -9,6 +9,7 @@ import re
 import pandas as pd
 from supabase import create_client, Client
 import hashlib
+import openai
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
 
