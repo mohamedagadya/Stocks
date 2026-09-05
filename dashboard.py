@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from groq import Groq
+from openai import OpenAI  # استخدام مكتبة OpenAI مع Gemini Endpoint
 import yfinance as yf
 import json
 from thefuzz import process  
@@ -9,39 +9,42 @@ import re
 import pandas as pd
 from supabase import create_client, Client
 import hashlib
-import openai
+
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bold", page_icon="😘", layout="wide")
+st.set_page_config(page_title="Bold", page_icon="📈", layout="wide")
 
 try:
-    API_KEY = st.secrets["GROQ_API_KEY"]
+    API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.warning("مطلوب مفتاح API للعمل")
+    st.warning("مطلوب مفتاح GEMINI_API_KEY للعمل")
     st.stop()
+
+# إنشاء عميل Google Gemini الموحد
+def get_ai_client():
+    return OpenAI(
+        api_key=API_KEY,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    st.warning("حدث خطأ في الاتصال بقاعدة البيانالت.")
+    st.warning("حدث خطأ في الاتصال بقاعدة البيانات.")
     st.stop()
 
 # ==========================================
 # نظام الحسابات والبوابة الأمنية (Authentication)
 # ==========================================
-
-# دالة بسيطة لتشفير الباسورد
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# التحقق: لو اليوزر مش مسجل دخول، اعرضله شاشة الدخول ووقف الكود
 if "user_id" not in st.session_state:
     st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>مرحباً بك في BOLD </h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #888;'>المنصة الذكية لتحليل الأسواق المالية</p>", unsafe_allow_html=True)
     st.divider()
     
-    # تقسيم الشاشة لتبويبات (تسجيل دخول / إنشاء حساب)
     tab1, tab2 = st.tabs(["تسجيل الدخول", "إنشاء حساب جديد"])
     
     with tab1:
@@ -53,16 +56,14 @@ if "user_id" not in st.session_state:
             if login_user and login_pass:
                 hashed_pass = hash_password(login_pass)
                 try:
-                    # البحث عن المستخدم في قاعدة البيانات السحابية
                     response = supabase.table("app_users").select("*").eq("username", login_user).eq("password", hashed_pass).execute()
                     users = response.data
                     
                     if users and len(users) > 0:
-                        # حفظ بيانات المستخدم في الذاكرة المؤقتة
                         st.session_state.user_id = users[0]['id']
                         st.session_state.username = users[0]['username']
-                        st.success("تم تسجيل الدخول بنجاح!   ...")
-                        st.rerun() # عمل ريفرش للصفحة عشان تقرأ باقي الكود
+                        st.success("تم تسجيل الدخول بنجاح!")
+                        st.rerun()
                     else:
                         st.error("اسم المستخدم أو كلمة المرور غير صحيحة.")
                 except Exception as e:
@@ -81,11 +82,9 @@ if "user_id" not in st.session_state:
                 if reg_pass == reg_pass_confirm:
                     hashed_pass = hash_password(reg_pass)
                     try:
-                        # إدخال المستخدم الجديد في قاعدة البيانات
                         supabase.table("app_users").insert({"username": reg_user, "password": hashed_pass}).execute()
                         st.success("تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول من التبويب الأول.")
                     except Exception as e:
-                        # اصطياد خطأ تكرار الاسم (لأننا عاملين unique في الداتا بيز)
                         if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "23505" in str(e):
                             st.error("اسم المستخدم مسجل بالفعل، يرجى اختيار اسم آخر.")
                         else:
@@ -95,33 +94,22 @@ if "user_id" not in st.session_state:
             else:
                 st.warning("يرجى تعبئة جميع الحقول.")
                 
-    # الأمر ده هو الحارس: بيمنع قراءة باقي الأبلكيشن لو اليوزر مش مسجل دخول
     st.stop()
 
-
 def get_ticker_from_db(search_term):
-    """
-    دالة بتسحب الأسهم من Supabase وتدور على أقرب تطابق ذكي
-    """
     try:
-        # سحب كل الشركات من قاعدة البيانات
         response = supabase.table("stocks").select("company_name, ticker").execute()
         all_stocks = response.data
-        
         if not all_stocks:
             return None, None
             
-        # تحويل البيانات لقاموس عشان نستخدم البحث الذكي
         db_dict = {row['company_name']: row['ticker'] for row in all_stocks}
-        
-        # البحث المرن بنسبة تطابق 70%
         best_match = process.extractOne(search_term, list(db_dict.keys()), score_cutoff=70)
         
         if best_match:
             matched_name = best_match[0]
             return db_dict[matched_name], matched_name
         return None, None
-        
     except Exception as e:
         st.error(f"حصل خطأ في الاتصال بقاعدة البيانات: {e}")
         return None, None
@@ -165,12 +153,7 @@ def save_chat_message(session_id, role, content):
         except:
             pass
 
-
-
 def display_rtl(text):
-    """
-    وظيفة لإجبار النص يظهر من اليمين للشمال مع تنسيق مريح للعين
-    """
     st.markdown(
         f"""
         <div style="direction: rtl; text-align: right; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #101114; padding: 20px; border-radius: 10px; border-right: 5px solid #ff4b4b;">
@@ -181,25 +164,10 @@ def display_rtl(text):
     )
 
 # ---------------------------------------------------------
-# (Fuzzy Search) 
-def find_ticker_smart(user_text):
-    """
-    بيدور في القاموس بتاعنا على أقرب كلمة للي المستخدم كتبه
-    """
-    # رفعنا نسبة الشبه لـ 80% عشان نمنع العك
-    best_match = process.extractOne(user_text, list(STOCK_DB.keys()), score_cutoff=80)
-
-    if best_match:
-        matched_name = best_match[0]
-        ticker = STOCK_DB[matched_name]
-        return ticker, matched_name
-    else:
-        return None, None
-
+# الموجه الذكي (Router) باستخدام Gemini
 # ---------------------------------------------------------
-#(Router)
 def smart_router(messages):
-    client = Groq(api_key=API_KEY)
+    client = get_ai_client()
     
     system_prompt = """
     أنت نظام توجيه ذكي (Router). مهمتك قراءة المحادثة وتحديد نية المستخدم في رسالته الأخيرة فقط بدقة.
@@ -207,35 +175,28 @@ def smart_router(messages):
     
     القواعد الصارمة للرموز (Tickers):
     1. للأسهم المصرية: يجب إضافة ".CA" في النهاية. 
-       - استخدم هذه القائمة للأسهم المصرية: (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
+       - أمثلة: (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
        
     2. الأسهم السعودية: يجب إضافة ".SR".
     3. الأسهم الأمريكية: بدون لاحقة.
     
     شكل الرد المطلوب (JSON):
     - إذا كان المستخدم يطلب تحليل سهم لأول مرة أو يسأل عن سهم جديد تماماً: {"action": "analyze", "ticker": "الرمز", "search_term": "اسم الشركة"}
-    - إذا كان المستخدم يطرح سؤالاً متابعاً (Follow-up)، أو يطلب شرحاً أو تفصيلاً للمؤشرات الفنية، أو يناقش تقريراً تم إصداره بالفعل في المحادثة الحالية: {"action": "chat"}
+    - إذا كان المستخدم يطرح سؤالاً متابعاً (Follow-up)، أو يطلب شرحاً للمؤشرات، أو يناقش تحليلاً سابقاً: {"action": "chat"}
     """
     
-    # نجهز الرسايل ونحط الـ System Prompt في الأول
     messages_to_send = [{"role": "system", "content": system_prompt}]
-    
-    # نبعت للموجه آخر 4 رسايل بس عشان يفهم السياق
     for msg in messages[-4:]:
         messages_to_send.append({"role": msg["role"], "content": msg["content"]})
         
     try:
-        # التعديل هنا: استخدام الموديل الأكبر والأذكى للربط المنطقي
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", 
+            model="gemini-1.5-flash",
             messages=messages_to_send,
-            temperature=0, # مهم يفضل صفر عشان يكون دقيق في الرموز وميهبدش
+            temperature=0,
             response_format={"type": "json_object"}
         )
-        
-        decision = json.loads(completion.choices[0].message.content)
-        return decision
-
+        return json.loads(completion.choices[0].message.content)
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
@@ -246,26 +207,18 @@ def get_market_news(query):
         response = requests.get(url, timeout=5)
         soup = BeautifulSoup(response.content, features="xml")
         items = soup.find_all("item")
-        
         if not items: return None
-        
-        # الاكتفاء بأهم 15 عنوان إخباري فقط لتوفير التوكنز وتسريع الرد
         return "\n".join([f"- {item.title.text}" for item in items[:25]])
-        
-    except Exception as e:
+    except Exception:
         return None
+
 @st.cache_data(ttl=300) 
 def scrape_egx_google_finance(ticker):
-    """
-    سكرابر بيسحب السعر اللحظي من Google Finance للسوق المصري
-    """
     if not ticker.endswith(".CA"):
         return None
         
     symbol = ticker.replace(".CA", "")
-    # التعديل هنا: استخدام EGX بدل CAI للبورصة المصرية
     url = f"https://www.google.com/finance/quote/{symbol}:EGX"
-    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -273,24 +226,16 @@ def scrape_egx_google_finance(ticker):
     try:
         response = requests.get(url, headers=headers, timeout=8)
         soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # كلاس السعر اللحظي في جوجل فاينانس
         price_elem = soup.find("div", class_="YMlKec fxKbKc")
         current_price = price_elem.text.strip() if price_elem else None
-        
-        return {
-            "price": current_price
-        }
-        
-    except Exception as e:
-        print(f" Error: {e}")
+        return {"price": current_price}
+    except Exception:
         return None
-        
-    
 
-
+# إضافة Caching لتحليل الأخبار لتجنب استدعاء Gemini لنفس السهم مراراً
+@st.cache_data(ttl=1800)
 def analyze_stock_news(news_text, stock_name, tech_data=""):
-    client = Groq(api_key=API_KEY)
+    client = get_ai_client()
     
     system_prompt = """
     أنت محلل مالي خبير ومستشار استثماري. مهمتك تقديم تحليل شامل بناءً على الأخبار الأساسية والمؤشرات الفنية المقدمة لك فقط.
@@ -301,15 +246,14 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
     - اسرد أهم الأخبار المؤثرة.
     - قيم مستوى المخاطرة وقدم رؤية استثمارية موضوعية.
     
-    ⚠️ تحذير صارم: إذا لم يتم تزويدك ببيانات "المؤشرات الفنية" صراحةً في الرسالة، يُمنع منعاً باتاً اختراع، استنتاج، أو كتابة أي أرقام لمؤشرات فنية من خيالك (مثل RSI أو MACD). في هذه الحالة، اكتفِ بتحليل الأخبار الأساسية فقط واذكر بوضوح للمستخدم أن "البيانات الفنية غير متاحة مؤقتاً لهذا السهم".
+    ⚠️ تحذير صارم: إذا لم يتم تزويدك ببيانات "المؤشرات الفنية" صراحةً في الرسالة، يُمنع منعاً باتاً اختراع أو استنتاج أي أرقام لمؤشرات فنية. اكتفِ بتحليل الأخبار واذكر بوضوح أن البيانات الفنية غير متاحة مؤقتاً.
     """
     
     combined_content = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
     try:
         completion = client.chat.completions.create(
-            # تغيير الموديل لتخطي الليميت المقفول
-            model="llama-3.1-8b-instant", 
+            model="gemini-1.5-flash", 
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": combined_content}
@@ -317,51 +261,37 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
             temperature=0.3 
         )
         return completion.choices[0].message.content
-        
     except Exception as e:
-        error_msg = str(e)
-        # اصطياد الإيرور عشان الأبلكيشن ميضربش
-        if "Rate limit" in error_msg or "429" in error_msg:
-            return "عذراً، انتهت الباقة المجانية للذكاء الاصطناعي (Rate Limit). يرجى الانتظار قليلاً أو تجربة سهم آخر لاحقاً."
-        else:
-            return f"حدث خطأ أثناء التحليل: {error_msg}"
+        return f"حدث خطأ أثناء التحليل: {str(e)}"
+
 @st.cache_data(ttl=900)        
 def get_stock_chart(ticker):
     try:
         stock = yf.Ticker(ticker)
-        # سحب بيانات سنة بدل 6 شهور عشان حسابات المتوسطات الطويلة تكون أدق
         hist = stock.history(period="1y") 
-        
         if hist.empty:
             return None
             
-        # 1. المتوسطات المتحركة البسيطة (SMA)
         hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
         hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
-        
-        # 2. المتوسطات المتحركة الأسية (EMA) - أسرع في الاستجابة
         hist['EMA_9'] = hist['Close'].ewm(span=9, adjust=False).mean()
         hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
         
-        # 3. مؤشر القوة النسبية (RSI 14)
         delta = hist['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         hist['RSI_14'] = 100 - (100 / (1 + rs))
         
-        # 4. مؤشر الماكد (MACD) - لقياس الزخم وتأكيد الاتجاه
         ema_12 = hist['Close'].ewm(span=12, adjust=False).mean()
         ema_26 = hist['Close'].ewm(span=26, adjust=False).mean()
         hist['MACD'] = ema_12 - ema_26
         hist['MACD_Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
         
-        # 5. بولينجر باندز (Bollinger Bands) - لقياس التذبذب والانفجار السعري
         std = hist['Close'].rolling(window=20).std()
         hist['BB_Upper'] = hist['SMA_20'] + (std * 2)
         hist['BB_Lower'] = hist['SMA_20'] - (std * 2)
         
-        # 6. متوسط المدى الحقيقي (ATR) - لقياس معدل المخاطرة وحركة السهم اليومية
         high_low = hist['High'] - hist['Low']
         high_close = (hist['High'] - hist['Close'].shift()).abs()
         low_close = (hist['Low'] - hist['Close'].shift()).abs()
@@ -369,16 +299,13 @@ def get_stock_chart(ticker):
         true_range = ranges.max(axis=1)
         hist['ATR_14'] = true_range.rolling(14).mean()
         
-        # نرجع بآخر 6 شهور بس للرسم البياني عشان الشاشة متكونش زحمة
-        return hist.tail(130) # حوالي 6 شهور تداول
+        return hist.tail(130)
     except:
         return None
 
-
-
-# ---------------------------------------------------------
-# ---------------------------------------------------------
-# Sidebar
+# ==========================================
+# الواجهة الجانبية (Sidebar)
+# ==========================================
 with st.sidebar:
     st.write(f"👤 مرحباً بك، **{st.session_state.username}**")
     if st.button("تسجيل خروج", use_container_width=True, type="primary"):
@@ -387,20 +314,15 @@ with st.sidebar:
     
     st.divider()
     
-    # --- قسم غرف المحادثة ---
     st.header("💬 محادثاتي السابقة")
-    
-    # زرار لفتح شات جديد أبيض
     if st.button("➕ تحليل سهم جديد", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
         st.rerun()
         
-    # عرض الغرف المحفوظة في الداتا بيز
     user_sessions = fetch_user_sessions(st.session_state.user_id)
     for sess in user_sessions:
         if st.button(f"📊 {sess['session_title']}", key=f"session_{sess['id']}", use_container_width=True):
-            # لو ضغط على غرفة، نحمل رسايلها
             st.session_state.current_session_id = sess['id']
             db_msgs = fetch_messages(sess['id'])
             st.session_state.messages = [{"role": msg["role"], "content": msg["content"]} for msg in db_msgs]
@@ -408,7 +330,6 @@ with st.sidebar:
 
     st.divider()
     
-    # --- حاسبة الاستثمار التراكمي (DCA) ---
     st.header("🧮 حاسبة الاستثمار (DCA)")
     st.write("احسب متوسط سعرك بعد ضخ مبلغ الشراء الجديد.")
     owned_shares = st.number_input("عدد الأسهم اللي معاك حالياً", min_value=0.0, value=0.0, step=1.0)
@@ -424,17 +345,18 @@ with st.sidebar:
             total_invested = current_total_value + new_investment
             new_average = total_invested / total_shares if total_shares > 0 else 0.0
             
-            st.success(f" متوسط السعر الجديد: **{new_average:.2f}**")
-            st.info(f" إجمالي الأسهم: **{total_shares:.2f}**")
-            st.info(f" إجمالي التكلفة: **{total_invested:.2f}**")
+            st.success(f"متوسط السعر الجديد: **{new_average:.2f}**")
+            st.info(f"إجمالي الأسهم: **{total_shares:.2f}**")
+            st.info(f"إجمالي التكلفة: **{total_invested:.2f}**")
         else:
             st.error("سعر السوق لا يمكن أن يكون صفراً.")
-# Interface
-# Interface
+
+# ==========================================
+# شاشة المحادثة وعرض التحليل (Main Interface)
+# ==========================================
 st.title("BOLD")
 st.caption("المنصة الذكية لتحليل الأسواق المالية")
 
-# تعريف الذاكرة المبدئية
 if "messages" not in st.session_state: 
     st.session_state.messages = []
 if "current_session_id" not in st.session_state:
@@ -449,7 +371,6 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # لو إحنا فاتحين غرفة قديمة، نحفظ سؤالك في الداتا بيز فوراً
     if st.session_state.current_session_id:
         save_chat_message(st.session_state.current_session_id, "user", prompt)
 
@@ -463,26 +384,20 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
             ticker = db_ticker if db_ticker else decision.get("ticker")
             name = db_name if db_ticker else search_term
 
-            # لو دي أول رسالة ومفيش غرفة، نكريت الغرفة باسم السهم
             if not st.session_state.current_session_id:
                 new_sess = create_new_session(st.session_state.user_id, ticker, f"تحليل {name}")
                 st.session_state.current_session_id = new_sess
                 save_chat_message(new_sess, "user", prompt)
 
-            # ... مسار السوق المصري والعالمي (نفس الكود القديم) ...
-            # مسار السوق المصري (بيانات لحظية من جوجل فاينانس)
             if ticker.endswith(".CA"):
                 st.caption("🇪🇬 جاري سحب الأسعار اللحظية من جوجل فاينانس...")
                 with st.spinner('جاري جلب بيانات الجلسة...'):
                     egx_data = scrape_egx_google_finance(ticker)
-                    
                     if egx_data and egx_data["price"]:
-                        # عرض السعر اللحظي للسوق المصري
                         st.metric("السعر اللحظي (جوجل فاينانس)", egx_data["price"])
                     else:
                         st.warning("تعذر سحب البيانات اللحظية، سيتم استخدام المصادر البديلة.")
                     
-                    # سحب الأخبار دايماً من محرك RSS الخاص بجوجل نيوز
                     news = get_market_news(name)
             else:
                 st.caption("🌐 جاري سحب البيانات من الأسواق العالمية...")
@@ -530,7 +445,6 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     st.markdown("### اتفضل التقرير:")
                     display_rtl(analysis)
                     
-                    # حفظ رد الموديل في الذاكرة وفي الداتا بيز
                     assistant_reply = f"تم تحليل سهم {name}:\n\n{analysis}"
                     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
                     save_chat_message(st.session_state.current_session_id, "assistant", assistant_reply)
@@ -538,42 +452,34 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     st.error("مفيش أخبار متاحة حالياً.")
 
         elif decision.get("action") == "chat":
-            with st.spinner('جاري  الرد...'):
-                # لو بيتكلم دردشة عامة ومفيش غرفة، نكريت واحدة
+            with st.spinner('جاري الرد...'):
                 if not st.session_state.current_session_id:
                     new_sess = create_new_session(st.session_state.user_id, "GENERAL", "دردشة عامة")
                     st.session_state.current_session_id = new_sess
                     save_chat_message(new_sess, "user", prompt)
 
-                client = Groq(api_key=API_KEY)
-                
-                # تحديث شخصية الموديل عشان يكون أعمق في الشرح المالي والرياضي
+                client = get_ai_client()
                 chat_messages = [
                     {"role": "system", "content": "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."}
                 ]
                 
-                # زيادة الذاكرة لآخر 10 رسائل عشان يقرأ التقرير الأساسي اللي تم إنتاجه في أول الجلسة
                 for msg in st.session_state.messages[-10:]:
                     chat_messages.append({"role": msg["role"], "content": msg["content"]})
                 
                 try:
                     chat_completion = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
+                        model="gemini-1.5-flash",
                         messages=chat_messages,
-                        temperature=0.4 # تقليل الحرارة لضمان الدقة في الشرح والبعد عن الهلوسة
+                        temperature=0.4
                     )
                     reply = chat_completion.choices[0].message.content
                     st.markdown(reply)
                     
-                    # حفظ في الذاكرة والداتا بيز
                     st.session_state.messages.append({"role": "assistant", "content": reply})
                     save_chat_message(st.session_state.current_session_id, "assistant", reply)
                     
                 except Exception as e:
-                    if "429" in str(e) or "Rate limit" in str(e):
-                        st.error("انتهت الباقة المجانية مؤقتاً (Rate Limit).")
-                    else:
-                        st.error(f"حصل خطأ أثناء الدردشة: {str(e)}")
+                    st.error(f"حصل خطأ أثناء الدردشة: {str(e)}")
                     
         elif decision.get("action") == "error":
             st.error(decision.get("reply"))
