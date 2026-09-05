@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI  # استخدام مكتبة OpenAI مع Gemini Endpoint
+import google.generativeai as genai
 import yfinance as yf
 import json
 from thefuzz import process  
@@ -15,22 +15,16 @@ st.set_page_config(page_title="Bold", page_icon="📈", layout="wide")
 
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
-except:
-    st.warning("مطلوب مفتاح GEMINI_API_KEY للعمل")
+    genai.configure(api_key=API_KEY)
+except Exception:
+    st.warning("مطلوب مفتاح GEMINI_API_KEY في st.secrets للعمل.")
     st.stop()
-
-# إنشاء عميل Google Gemini الموحد
-def get_ai_client():
-    return OpenAI(
-        api_key=API_KEY,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-    )
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
+except Exception:
     st.warning("حدث خطأ في الاتصال بقاعدة البيانات.")
     st.stop()
 
@@ -121,14 +115,14 @@ def fetch_user_sessions(user_id):
     try:
         res = supabase.table("chat_sessions").select("id, session_title").eq("user_id", user_id).order("created_at", desc=True).execute()
         return res.data
-    except:
+    except Exception:
         return []
 
 def fetch_messages(session_id):
     try:
         res = supabase.table("chat_messages").select("role, content").eq("session_id", session_id).order("created_at").execute()
         return res.data
-    except:
+    except Exception:
         return []
 
 def create_new_session(user_id, ticker, title):
@@ -139,7 +133,7 @@ def create_new_session(user_id, ticker, title):
             "session_title": title
         }).execute()
         return res.data[0]['id']
-    except:
+    except Exception:
         return None
 
 def save_chat_message(session_id, role, content):
@@ -150,7 +144,7 @@ def save_chat_message(session_id, role, content):
                 "role": role, 
                 "content": content
             }).execute()
-        except:
+        except Exception:
             pass
 
 def display_rtl(text):
@@ -167,8 +161,6 @@ def display_rtl(text):
 # الموجه الذكي (Router) باستخدام Gemini
 # ---------------------------------------------------------
 def smart_router(messages):
-    client = get_ai_client()
-    
     system_prompt = """
     أنت نظام توجيه ذكي (Router). مهمتك قراءة المحادثة وتحديد نية المستخدم في رسالته الأخيرة فقط بدقة.
     هام جداً: يجب أن يكون الرد بصيغة JSON فقط.
@@ -185,18 +177,16 @@ def smart_router(messages):
     - إذا كان المستخدم يطرح سؤالاً متابعاً (Follow-up)، أو يطلب شرحاً للمؤشرات، أو يناقش تحليلاً سابقاً: {"action": "chat"}
     """
     
-    messages_to_send = [{"role": "system", "content": system_prompt}]
-    for msg in messages[-4:]:
-        messages_to_send.append({"role": msg["role"], "content": msg["content"]})
-        
+    conversation_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages[-4:]])
+    prompt = f"{system_prompt}\n\nالمحادثة الأخيرة:\n{conversation_context}"
+    
     try:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-flash",
-            messages=messages_to_send,
-            temperature=0,
-            response_format={"type": "json_object"}
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config={"response_mime_type": "application/json", "temperature": 0}
         )
-        return json.loads(completion.choices[0].message.content)
+        response = model.generate_content(prompt)
+        return json.loads(response.text)
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
@@ -207,7 +197,8 @@ def get_market_news(query):
         response = requests.get(url, timeout=5)
         soup = BeautifulSoup(response.content, features="xml")
         items = soup.find_all("item")
-        if not items: return None
+        if not items: 
+            return None
         return "\n".join([f"- {item.title.text}" for item in items[:25]])
     except Exception:
         return None
@@ -232,11 +223,9 @@ def scrape_egx_google_finance(ticker):
     except Exception:
         return None
 
-# إضافة Caching لتحليل الأخبار لتجنب استدعاء Gemini لنفس السهم مراراً
+# Caching لمدة نصف ساعة لتوفير استدعاءات النموذج
 @st.cache_data(ttl=1800)
 def analyze_stock_news(news_text, stock_name, tech_data=""):
-    client = get_ai_client()
-    
     system_prompt = """
     أنت محلل مالي خبير ومستشار استثماري. مهمتك تقديم تحليل شامل بناءً على الأخبار الأساسية والمؤشرات الفنية المقدمة لك فقط.
     
@@ -249,18 +238,15 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
     ⚠️ تحذير صارم: إذا لم يتم تزويدك ببيانات "المؤشرات الفنية" صراحةً في الرسالة، يُمنع منعاً باتاً اختراع أو استنتاج أي أرقام لمؤشرات فنية. اكتفِ بتحليل الأخبار واذكر بوضوح أن البيانات الفنية غير متاحة مؤقتاً.
     """
     
-    combined_content = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
+    prompt = f"{system_prompt}\n\nالسهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
     try:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-flash", 
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": combined_content}
-            ],
-            temperature=0.3 
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config={"temperature": 0.3}
         )
-        return completion.choices[0].message.content
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
         return f"حدث خطأ أثناء التحليل: {str(e)}"
 
@@ -300,7 +286,7 @@ def get_stock_chart(ticker):
         hist['ATR_14'] = true_range.rolling(14).mean()
         
         return hist.tail(130)
-    except:
+    except Exception:
         return None
 
 # ==========================================
@@ -458,21 +444,23 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     st.session_state.current_session_id = new_sess
                     save_chat_message(new_sess, "user", prompt)
 
-                client = get_ai_client()
-                chat_messages = [
-                    {"role": "system", "content": "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."}
-                ]
-                
+                system_instruction = "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."
+
+                # تنسيق سجل الشات لمكتبة Gemini الرسمية
+                chat_history = []
                 for msg in st.session_state.messages[-10:]:
-                    chat_messages.append({"role": msg["role"], "content": msg["content"]})
-                
+                    role = "user" if msg["role"] == "user" else "model"
+                    chat_history.append({"role": role, "parts": [msg["content"]]})
+
                 try:
-                    chat_completion = client.chat.completions.create(
-                        model="gemini-1.5-flash",
-                        messages=chat_messages,
-                        temperature=0.4
+                    model = genai.GenerativeModel(
+                        model_name="gemini-1.5-flash",
+                        system_instruction=system_instruction,
+                        generation_config={"temperature": 0.4}
                     )
-                    reply = chat_completion.choices[0].message.content
+                    chat = model.start_chat(history=chat_history[:-1])
+                    response = chat.send_message(st.session_state.messages[-1]["content"])
+                    reply = response.text
                     st.markdown(reply)
                     
                     st.session_state.messages.append({"role": "assistant", "content": reply})
