@@ -21,8 +21,32 @@ except Exception:
     st.warning("مطلوب مفتاح GEMINI_API_KEY في st.secrets للعمل.")
     st.stop()
 
-# تحديد الموديل المطلوب
-MODEL_NAME = "gemini-3.6-flash"
+# قائمة الموديلات بالترتيب لمعالجة ضغط السيرفرات (503 Fallback)
+CANDIDATE_MODELS = [
+    "gemini-3.6-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest"
+]
+
+def generate_with_fallback(contents, config):
+    """دالة تحاول الاتصال بالموديل الأساسي، ولو واجه 503 أو ضغطاً تنتقل للبديل فوراً"""
+    last_error = None
+    for model_name in CANDIDATE_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config
+            )
+            return response
+        except Exception as e:
+            last_error = e
+            err_msg = str(e).lower()
+            if "503" in str(e) or "high demand" in err_msg or "unavailable" in err_msg:
+                continue
+            raise e
+    raise last_error
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -181,8 +205,7 @@ def smart_router(messages):
     prompt = f"{system_prompt}\n\nالمحادثة الأخيرة:\n{conversation_context}"
     
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
+        response = generate_with_fallback(
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -243,8 +266,7 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
     prompt = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
+        response = generate_with_fallback(
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
@@ -455,8 +477,7 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                 prompt_full = f"{history_text}\nassistant:"
 
                 try:
-                    response = client.models.generate_content(
-                        model=MODEL_NAME,
+                    response = generate_with_fallback(
                         contents=prompt_full,
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
