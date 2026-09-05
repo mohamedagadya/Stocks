@@ -8,4 +8,4 @@ lxml
 plotly
 pandas
 supabase
-openai
+google.generativeai
