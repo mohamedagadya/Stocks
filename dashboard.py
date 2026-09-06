@@ -24,7 +24,6 @@ except Exception:
 # قائمة الموديلات بالترتيب لمعالجة ضغط السيرفرات (503 Fallback)
 CANDIDATE_MODELS = [
     "gemini-3.6-flash",
-    "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite"
 ]
