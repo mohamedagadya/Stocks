@@ -38,7 +38,7 @@ def generate_with_fallback(contents, config, max_retries=3):
             err_msg = str(e).lower()
             # لو خطأ 503 أو ضغط مؤقت، انتظر ثانية ونصف وجرب تاني
             if ("503" in str(e) or "high demand" in err_msg or "unavailable" in err_msg) and attempt < max_retries - 1:
-                time.sleep(1.5)
+                time.sleep(2.5)
                 continue
             raise e
 
