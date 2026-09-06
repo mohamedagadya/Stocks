@@ -26,7 +26,7 @@ CANDIDATE_MODELS = [
     "gemini-3.6-flash",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash-latest"
+    "gemini-2.0-flash-lite"
 ]
 
 def generate_with_fallback(contents, config):
