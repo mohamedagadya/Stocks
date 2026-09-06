@@ -22,28 +22,25 @@ except Exception:
     st.stop()
 
 # قائمة الموديلات بالترتيب لمعالجة ضغط السيرفرات (503 Fallback)
-CANDIDATE_MODELS = [
-    "gemini-3.6-flash"
-]
+MODEL_NAME = "gemini-3.6-flash"
 
-def generate_with_fallback(contents, config):
-    """دالة تحاول الاتصال بالموديل الأساسي، ولو واجه 503 أو ضغطاً تنتقل للبديل فوراً"""
-    last_error = None
-    for model_name in CANDIDATE_MODELS:
+def generate_with_fallback(contents, config, max_retries=3):
+    """دالة تعيد المحاولة تلقائياً بعد ثانية ونصف لو السيرفر عليه ضغط 503"""
+    for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model=model_name,
+                model=MODEL_NAME,
                 contents=contents,
                 config=config
             )
             return response
         except Exception as e:
-            last_error = e
             err_msg = str(e).lower()
-            if "503" in str(e) or "high demand" in err_msg or "unavailable" in err_msg:
+            # لو خطأ 503 أو ضغط مؤقت، انتظر ثانية ونصف وجرب تاني
+            if ("503" in str(e) or "high demand" in err_msg or "unavailable" in err_msg) and attempt < max_retries - 1:
+                time.sleep(1.5)
                 continue
             raise e
-    raise last_error
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
