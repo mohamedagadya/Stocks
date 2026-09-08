@@ -14,17 +14,17 @@ import hashlib
 st.set_page_config(page_title="Bold", page_icon="📈", layout="wide")
 
 try:
-    # تهيئة عميل OpenAI للاتصال بـ GitHub Models
+    # الاتصال بسيرفرات OpenRouter المفتوحة والمجانية
     client = OpenAI(
-        base_url="https://models.inference.ai.azure.com",
-        api_key=st.secrets["GITHUB_TOKEN"],
+        base_url="https://openrouter.ai/api/v1",
+        api_key=st.secrets["OPENROUTER_API_KEY"],
     )
 except Exception:
-    st.warning("مطلوب مفتاح GITHUB_TOKEN في st.secrets للعمل.")
+    st.warning("مطلوب مفتاح OPENROUTER_API_KEY في st.secrets للعمل.")
     st.stop()
 
-# تحديد الموديل الذكي والمستقر من GitHub Models
-MODEL_NAME = "gpt-4o-mini"
+# موديل مجاني ومستقر جداً من OpenRouter
+MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -174,7 +174,6 @@ def smart_router(messages):
     
     القواعد الصارمة للرموز (Tickers):
     1. للأسهم المصرية: يجب إضافة ".CA" في النهاية. 
-       - أمثلة: (فوري: FWRY.CA)، (إي فاينانس: EFIH.CA)، (التجاري الدولي: COMI.CA)، (حديد عز: ESRS.CA)، (طلعت مصطفى: TMGH.CA)، (موبكو: MFPC.CA)، (السويدي: SWDY.CA)، (بلتون: BTLL.CA)، (بالم هيلز: PHDC.CA)، (هيرميس: HRHO.CA)، (سيدي كرير: SKPC.CA)، (أبو قير: ABUK.CA).
     2. الأسهم السعودية: يجب إضافة ".SR".
     3. الأسهم الأمريكية: بدون لاحقة.
     """
