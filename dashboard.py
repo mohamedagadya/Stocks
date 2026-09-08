@@ -1,8 +1,7 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from google import genai
-from google.genai import types
+from openai import OpenAI
 import yfinance as yf
 import json
 from thefuzz import process  
@@ -10,38 +9,22 @@ import re
 import pandas as pd
 from supabase import create_client, Client
 import hashlib
-import time
 
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bold", page_icon="📈", layout="wide")
 
 try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-    client = genai.Client(api_key=API_KEY)
+    # تهيئة عميل OpenAI للاتصال بـ GitHub Models
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=st.secrets["GITHUB_TOKEN"],
+    )
 except Exception:
-    st.warning("مطلوب مفتاح GEMINI_API_KEY في st.secrets للعمل.")
+    st.warning("مطلوب مفتاح GITHUB_TOKEN في st.secrets للعمل.")
     st.stop()
 
-# قائمة الموديلات بالترتيب لمعالجة ضغط السيرفرات (503 Fallback)
-MODEL_NAME = "gemini-3.6-flash"
-
-def generate_with_fallback(contents, config, max_retries=3):
-    """دالة تعيد المحاولة تلقائياً بعد ثانية ونصف لو السيرفر عليه ضغط 503"""
-    for attempt in range(max_retries):
-        try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=contents,
-                config=config
-            )
-            return response
-        except Exception as e:
-            err_msg = str(e).lower()
-            # لو خطأ 503 أو ضغط مؤقت، انتظر ثانية ونصف وجرب تاني
-            if ("503" in str(e) or "high demand" in err_msg or "unavailable" in err_msg) and attempt < max_retries - 1:
-                time.sleep(2.5)
-                continue
-            raise e
+# تحديد الموديل الذكي والمستقر من GitHub Models
+MODEL_NAME = "gpt-4o-mini"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -196,18 +179,18 @@ def smart_router(messages):
     3. الأسهم الأمريكية: بدون لاحقة.
     """
     
-    conversation_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages[-4:]])
-    prompt = f"{system_prompt}\n\nالمحادثة الأخيرة:\n{conversation_context}"
-    
+    messages_to_send = [{"role": "system", "content": system_prompt}]
+    for msg in messages[-4:]:
+        messages_to_send.append({"role": msg["role"], "content": msg["content"]})
+        
     try:
-        response = generate_with_fallback(
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0
-            )
+        completion = client.chat.completions.create(
+            model=MODEL_NAME, 
+            messages=messages_to_send,
+            temperature=0,
+            response_format={"type": "json_object"}
         )
-        return json.loads(response.text)
+        return json.loads(completion.choices[0].message.content)
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
 
@@ -258,17 +241,18 @@ def analyze_stock_news(news_text, stock_name, tech_data=""):
     ⚠️ تحذير صارم: إذا لم يتم تزويدك ببيانات "المؤشرات الفنية" صراحةً في الرسالة، يُمنع منعاً باتاً اختراع أي أرقام لمؤشرات فنية. اكتفِ بتحليل الأخبار واذكر بوضوح أن البيانات الفنية غير متاحة مؤقتاً.
     """
     
-    prompt = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
+    combined_content = f"السهم: {stock_name}\n\n{tech_data}\n\nالأخبار:\n{news_text}"
     
     try:
-        response = generate_with_fallback(
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.3
-            )
+        completion = client.chat.completions.create(
+            model=MODEL_NAME, 
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": combined_content}
+            ],
+            temperature=0.3 
         )
-        return response.text
+        return completion.choices[0].message.content
     except Exception as e:
         return f"حدث خطأ أثناء التحليل: {str(e)}"
 
@@ -466,20 +450,20 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
                     st.session_state.current_session_id = new_sess
                     save_chat_message(new_sess, "user", prompt)
 
-                system_instruction = "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."
-
-                history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-10:]])
-                prompt_full = f"{history_text}\nassistant:"
-
+                chat_messages = [
+                    {"role": "system", "content": "أنت مستشار مالي متقدم وخبير في التحليل الفني والرياضي للأسواق. مهمتك الإجابة على استفسارات المستخدم، تفصيل وشرح دلالات المؤشرات الفنية المذكورة في التقارير السابقة بدقة، وإجراء نقاش تحليلي عميق بناءً على سياق المحادثة. قدم إجابات منطقية مبنية على الأرقام المعروضة في المحادثة."}
+                ]
+                
+                for msg in st.session_state.messages[-10:]:
+                    chat_messages.append({"role": msg["role"], "content": msg["content"]})
+                
                 try:
-                    response = generate_with_fallback(
-                        contents=prompt_full,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            temperature=0.4
-                        )
+                    completion = client.chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=chat_messages,
+                        temperature=0.4
                     )
-                    reply = response.text
+                    reply = completion.choices[0].message.content
                     st.markdown(reply)
                     
                     st.session_state.messages.append({"role": "assistant", "content": reply})
