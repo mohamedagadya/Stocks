@@ -24,7 +24,7 @@ except Exception:
     st.stop()
 
 # موديل مجاني ومستقر جداً من OpenRouter
-MODEL_NAME = "google/gemini-2.0-flash-exp:free"
+MODEL_NAME = "deepseek-ai/DeepSeek-V4-Flash-0731"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
