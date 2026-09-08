@@ -24,7 +24,7 @@ except Exception:
     st.stop()
 
 # موديل مجاني ومستقر جداً من OpenRouter
-MODEL_NAME = "deepseek-ai/DeepSeek-V4-Flash-0731"
+MODEL_NAME = "upstage/solar-pro4"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
