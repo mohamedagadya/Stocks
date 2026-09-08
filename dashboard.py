@@ -171,17 +171,14 @@ def smart_router(messages):
     أنت نظام توجيه ذكي (Router). مهمتك قراءة المحادثة وتحديد نية المستخدم في رسالته الأخيرة بدقة متناهية.
     
     القواعد الصارمة للتوجيه:
-    1. اختر "analyze" **فقط** إذا كان المستخدم يطلب صراحةً تحليل سهم معين، أو يكتب اسم شركة أو رمز سهم (مثل: "فوري"، "طلعت مصطفى"، "Apple"، "تحليل سهم كذا").
-    2. اختر "chat" إذا كان المستخدم يسأل سؤالاً عاماً، أو يستفسر عن مصطلح مالي، أو يكتب كلمة عابرة، أو يعبر عن غضبه/فرحه، أو يكتب كلاماً لا يمت لأسماء الشركات بصلة (مثل: "احا"، "شكراً"، "يعني ايه RSI"، "البورصة بتقع").
+    1. اختر "analyze" **فقط** إذا كان المستخدم يطلب صراحةً تحليل سهم معين، أو يكتب اسم شركة (مثل: "فوري"، "طلعت مصطفى"، "سهم التجاري الدولي"، "تحليل سهم كذا").
+    2. اختر "chat" إذا كان المستخدم يسأل سؤالاً عاماً، أو يستفسر عن مصطلح مالي، أو يكتب كلمة عابرة، أو يعبر عن شعور، أو يكتب كلاماً لا يمت لأسماء الشركات بصلة (مثل: "شكراً"، "يعني ايه RSI"، "البورصة بتقع").
     
     هام جداً: يجب أن يكون الرد بصيغة JSON فقط كالتالي:
-    إذا كانت النية تحليل سهم: {"action": "analyze", "ticker": "...", "search_term": "..."}
+    إذا كانت النية تحليل سهم: {"action": "analyze", "search_term": "الاسم كما كتبه المستخدم بالضبط هنا"}
     إذا كانت النية دردشة عادية: {"action": "chat"}
     
-    قواعد الرموز (Tickers) في حالة الـ analyze فقط:
-    1. للأسهم المصرية: أضف ".CA". (مثال: التجاري الدولي COMI.CA).
-    2. الأسهم السعودية: أضف ".SR".
-    3. الأسهم الأمريكية: بدون لاحقة.
+    تحذير: لا تحاول تخمين رمز السهم (Ticker). استخرج فقط الكلمة التي تمثل اسم الشركة.
     """
     
     messages_to_send = [{"role": "system", "content": system_prompt}]
@@ -198,6 +195,7 @@ def smart_router(messages):
         return json.loads(completion.choices[0].message.content)
     except Exception as e:
         return {"action": "error", "reply": f"خطأ: {str(e)}"}
+
 
 @st.cache_data(ttl=900)
 def get_market_news(query):
@@ -378,8 +376,16 @@ if prompt := st.chat_input("اكتب اسم السهم أو اسألني عن ا
         if decision.get("action") == "analyze":
             search_term = decision.get("search_term")
             db_ticker, db_name = get_ticker_from_db(search_term)
-            ticker = db_ticker if db_ticker else decision.get("ticker")
-            name = db_name if db_ticker else search_term
+            
+            # إذا لم يتم العثور على السهم في قاعدة البيانات
+            if not db_ticker:
+                st.warning(f"لم أتمكن من العثور على سهم يطابق '{search_term}'. يرجى التأكد من الاسم.")
+                # تحويله لشات عادي كإجراء بديل
+                st.session_state.messages.append({"role": "assistant", "content": f"لم أجد بيانات لسهم '{search_term}'، هل تقصد شيئاً آخر؟"})
+                st.rerun()
+
+            ticker = db_ticker
+            name = db_name
 
             if not st.session_state.current_session_id:
                 new_sess = create_new_session(st.session_state.user_id, ticker, f"تحليل {name}")
