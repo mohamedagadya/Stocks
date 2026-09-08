@@ -24,7 +24,7 @@ except Exception:
     st.stop()
 
 # موديل مجاني ومستقر جداً من OpenRouter
-MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
+MODEL_NAME = "meta-llama/llama-3.1-8b-instruct"
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
